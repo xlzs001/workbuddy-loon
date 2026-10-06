@@ -105,6 +105,13 @@ function notify(title, subtitle, body) {
   try { if (typeof $notify !== "undefined") $notify(title, subtitle || "", body || ""); } catch (e) {}
 }
 
+/* 脚本日志：Loon / Surge 的「脚本日志」里能直接看到，排错全靠它（绝不打印令牌本体） */
+function log() {
+  try {
+    if (typeof console !== "undefined" && console.log) console.log.apply(console, Array.prototype.slice.call(arguments));
+  } catch (e) {}
+}
+
 function headers() {
   var h = {
     "Accept": "application/json",
@@ -135,7 +142,13 @@ function api(method, path, body, cb) {
     } catch (e) {}
     var json = null;
     try { json = JSON.parse(data); } catch (e) {}
-    cb(code, json === null ? { raw: String(data == null ? "" : data).slice(0, 300) } : json);
+    var out = json === null ? { raw: String(data == null ? "" : data).slice(0, 300) } : json;
+    if (code >= 200 && code < 300) {
+      log("· " + method + " " + path + " → " + code);
+    } else {
+      log("× " + method + " " + path + " → " + code + "  " + trunc(out.error || out.msg || out.raw || "", 140));
+    }
+    cb(code, out);
   });
 }
 
@@ -716,6 +729,9 @@ function startAccount(a) {
   parts = [];
   ctx = { ok: 0, fail: 0, hard: 0, credits: 0, result: "", ended: false, done: endAccount };
   T0 = Date.now();
+  log("▸ " + ACC.name + "（uid " + (ACC.uid || "无") + "）开始，预算 " + Math.floor(BUDGET) +
+      "s，成长中心=" + (flag("WorkBuddy_EnableGrowth", "1") ? "开" : "关") +
+      "，盲盒=" + (flag("WorkBuddy_EnableBuddyOpen", "1") ? "开" : "关"));
 
   var steps = [stepCheckin];
   if (flag("WorkBuddy_EnableGrowth", "1")) {
@@ -726,6 +742,7 @@ function startAccount(a) {
 }
 
 function endAccount() {
+  log("◂ " + ACC.name + " → " + (ctx.result || "OK") + "：" + (ctx.text || "无操作"));
   RESULTS.push({
     name: ACC.name, uid: ACC.uid, result: ctx.result || "OK", report: ctx.text || "无操作",
     ok: ctx.ok, credits: ctx.credits, failures: ctx.fail, hard: ctx.hard
@@ -800,6 +817,9 @@ function finalize() {
 
   var quiet = (argument() === "poll" || argument() === "silent");
   var verbose = flag("WorkBuddy_LogEmpty", "0");
+  log("── WorkBuddy 结束：" + result + (creditsSum ? " +" + creditsSum + " 积分" : "") +
+      "（成功 " + okSum + " 次" + (failSum ? "，失败 " + failSum + " 次" : "") + "）──");
+  log(text);
   var worth = hardSum > 0 || !!ERROR_STATES[result] || anySuccess || okSum > 0 || result === "INACTIVE";
   if (!quiet || verbose || worth) {
     var title = "WorkBuddy 签到" + (multi ? "（" + RESULTS.length + " 个账号）" : "");
@@ -860,6 +880,8 @@ function captureToken() {
     if (!poolUpdated) notify("WorkBuddy 令牌已更新", "来自手机端请求", "新的 accessToken 已写入 BoxJS");
   }
   if (poolUpdated) notify("WorkBuddy 令牌已更新", hit || "账号池", "账号池中「" + (hit || "") + "」的 accessToken 已刷新");
+  log("⇢ 捕获请求令牌：uid=" + (uidH || "无") + "，令牌长度=" + (token ? token.length : 0) +
+      (poolUpdated ? "，已刷新账号池「" + hit + "」" : (hit ? "，与账号池一致" : "，账号池未命中")));
   try { $done({}); } catch (e) {}
 }
 
@@ -904,6 +926,10 @@ function panel() {
 function begin(list, skipped) {
   ACCOUNTS = list;
   SKIPPED = skipped || [];
+  log("══ WorkBuddy 启动 ══ argument=" + (argument() || "(空)") +
+      "，账号池原始长度=" + store("WorkBuddy_Accounts", "").length +
+      "，解析出 " + list.length + " 个账号");
+  for (var si = 0; si < SKIPPED.length; si++) log("⤫ 跳过 " + SKIPPED[si].name + "：" + SKIPPED[si].reason);
 
   if (!ACCOUNTS.length) {
     var why = SKIPPED.length
