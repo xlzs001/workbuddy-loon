@@ -1,0 +1,14 @@
+# 账号池 / 令牌导出 —— 都是能直接用的活凭据，永远不要提交
+wb-switch-accounts-*.json
+accounts.json
+accounts-*.json
+!accounts-slim.py
+
+# 电脑端凭据文件（万一被拷进来）
+workbuddy-desktop.info
+Tencent-Cloud.coding-copilot.info
+
+# 本地脚本副本 / 编辑器杂物
+*.log
+.DS_Store
+node_modules/

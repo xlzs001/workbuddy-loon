@@ -1,0 +1,115 @@
+{
+  "name": "WorkBuddy 签到（88lin 移植版）",
+  "apps": [
+    {
+      "id": "workbuddy.signin",
+      "name": "WorkBuddy 自动签到",
+      "author": "@xlzs001",
+      "repo": "https://github.com/88lin/workbuddy-auto-signin",
+      "icons": [
+        "https://raw.githubusercontent.com/88lin/workbuddy-auto-signin/main/assets/cover.jpg"
+      ],
+      "description": "自动领取 WorkBuddy 每日签到积分与成长中心全部奖励，支持多账号。令牌由桌面端导出（export-token.py / accounts-slim.py），或由插件里的 MITM 脚本自动保鲜。",
+      "keys": [
+        "WorkBuddy_Accounts",
+        "WorkBuddy_AccountsURL",
+        "WorkBuddy_Budget",
+        "WorkBuddy_Token",
+        "WorkBuddy_Uid",
+        "WorkBuddy_EnterpriseId",
+        "WorkBuddy_Domain",
+        "WorkBuddy_Name",
+        "WorkBuddy_EnableGrowth",
+        "WorkBuddy_EnableBuddyOpen",
+        "WorkBuddy_Notify",
+        "WorkBuddy_LogEmpty"
+      ],
+      "settings": [
+        {
+          "id": "WorkBuddy_Accounts",
+          "name": "账号池（多账号，推荐）",
+          "val": "",
+          "type": "text",
+          "desc": "粘贴 accounts-slim.py 输出的一行 JSON 数组，例如 [{\"nickname\":\"大号\",\"access_token\":\"eyJ...\",\"uid\":\"...\"}]。填了它就不用再填下面的 accessToken/uid；支持切号工具导出的原始格式。含真实令牌，别提交到仓库。"
+        },
+        {
+          "id": "WorkBuddy_AccountsURL",
+          "name": "账号池 URL（可选）",
+          "val": "",
+          "type": "text",
+          "desc": "把账号池 JSON 托管在自己的地址上并填这里，脚本每轮会拉取并缓存（拉取时不带任何认证头）。启用后以 URL 为准，本地账号池只作为拉取失败时的兜底。"
+        },
+        {
+          "id": "WorkBuddy_Budget",
+          "name": "整轮预算（秒）",
+          "val": "540",
+          "type": "text",
+          "desc": "整轮所有账号共享的总预算，必须小于插件 cron 的 timeout（600）。每个账号分到 min(240, 总额/账号数) 秒。小于 60 会被重置为 540。"
+        },
+        {
+          "id": "WorkBuddy_Token",
+          "name": "accessToken（单账号）",
+          "val": "",
+          "type": "text",
+          "desc": "仅单账号时使用。桌面端凭据文件里 auth.accessToken 的值（不带 Bearer 前缀）。填了账号池就忽略这里。"
+        },
+        {
+          "id": "WorkBuddy_Uid",
+          "name": "X-User-Id / uid（单账号）",
+          "val": "",
+          "type": "text",
+          "desc": "仅单账号时使用。凭据文件里 account.uid 的值，export-token.py 的 uid 字段。"
+        },
+        {
+          "id": "WorkBuddy_EnterpriseId",
+          "name": "企业 ID（可选）",
+          "val": "",
+          "type": "text",
+          "desc": "企业账号才需要，会作为 X-Enterprise-Id / X-Tenant-Id 发送。个人账号留空。"
+        },
+        {
+          "id": "WorkBuddy_Domain",
+          "name": "域（可选）",
+          "val": "",
+          "type": "text",
+          "desc": "凭据里的 auth.domain，作为 X-Domain 发送。切号工具导出的账号池自带该字段；单账号模式下一般留空。"
+        },
+        {
+          "id": "WorkBuddy_Name",
+          "name": "单账号显示名（可选）",
+          "val": "",
+          "type": "text",
+          "desc": "只在单账号模式下出现在通知和报告里，默认「默认账号」。"
+        },
+        {
+          "id": "WorkBuddy_EnableGrowth",
+          "name": "成长中心",
+          "val": "1",
+          "type": "boolean",
+          "desc": "开启后自动领旅行礼物、派 Buddy、接任务领奖、补登、连登兑换、开盲盒。"
+        },
+        {
+          "id": "WorkBuddy_EnableBuddyOpen",
+          "name": "Buddy 能量盲盒",
+          "val": "1",
+          "type": "boolean",
+          "desc": "能量攒够就开 Buddy 盲盒。能量没有其它消耗出口，一般保持开启。"
+        },
+        {
+          "id": "WorkBuddy_Notify",
+          "name": "发送通知",
+          "val": "1",
+          "type": "boolean",
+          "desc": "关闭后脚本完全静默，只写 BoxJS 的 WorkBuddy_LastReport。"
+        },
+        {
+          "id": "WorkBuddy_LogEmpty",
+          "name": "轮询空跑也通知",
+          "val": "0",
+          "type": "boolean",
+          "desc": "默认只在真领到东西或出错时通知，避免「已签过 / Buddy 还在路上」刷屏。"
+        }
+      ]
+    }
+  ]
+}
