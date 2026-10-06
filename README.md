@@ -138,8 +138,10 @@ https://cdn.jsdelivr.net/gh/xlzs001/workbuddy-loon@main/workbuddy.js
    `https://raw.githubusercontent.com/xlzs001/workbuddy-loon/main/boxjs.json`
 4. **填令牌**：BoxJS → 应用 → 「WorkBuddy 自动签到」 →
    多账号：粘贴到 **「账号池」**；单账号：填 `accessToken` 与 `uid`
-   （`enterpriseId` / `domain` 仅企业账号需要）→ 保存
-5. **首次验证**：Loon → 脚本 → 找到 `WorkBuddy每日签到` → 立即运行一次
+   （`enterpriseId` / `domain` 仅企业账号需要）→ **点右下角蓝色浮动按钮保存**，
+   再下拉刷新一次页面确认值还在（不保存 = 脚本读到的还是空的）
+5. **首次验证**：Loon → 插件详情页 / 脚本列表 → 找到 **`WorkBuddy手动签到`** →
+   点一下立刻跑一轮（这条是 `generic` 手动入口，不用等到 00:05）
 
 ## 3. 多账号（账号池）
 

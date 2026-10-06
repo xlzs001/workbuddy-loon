@@ -34,7 +34,9 @@
           "id": "WorkBuddy_Accounts",
           "name": "账号池（多账号，推荐）",
           "val": "",
-          "type": "text",
+          "type": "textarea",
+          "autoGrow": true,
+          "rows": 6,
           "desc": "粘贴 accounts-slim.py 输出的一行 JSON 数组，例如 [{\"nickname\":\"大号\",\"access_token\":\"eyJ...\",\"uid\":\"...\"}]。填了它就不用再填下面的 accessToken/uid；支持切号工具导出的原始格式。含真实令牌，别提交到仓库。"
         },
         {

@@ -35,7 +35,11 @@ cron "5 0 * * *" script-path=https://raw.githubusercontent.com/xlzs001/workbuddy
 #    这一轮同时兜住「00:05 没开机 / 没网」导致的断签。
 cron "0 */4 * * *" script-path=https://raw.githubusercontent.com/xlzs001/workbuddy-loon/main/workbuddy.js, tag=WorkBuddy成长轮询, timeout=600, argument=poll
 
-# ④ 可选：Loon 卡片面板（Loon 版本较新才支持 [Panel]，不支持就直接删掉）
+# ④ 手动执行入口：装好后在 Loon 里（插件详情页 / 脚本列表）会多出一个可点的
+#    「WorkBuddy 手动签到」，点一下立刻跑一轮，不用等到 00:05。
+generic script-path=https://raw.githubusercontent.com/xlzs001/workbuddy-loon/main/workbuddy.js, argument=auto, tag=WorkBuddy手动签到, timeout=600
+
+# ⑤ 可选：Loon 卡片面板（Loon 版本较新才支持 [Panel]，不支持就直接删掉）
 [Panel]
 WorkBuddy = script-path=https://raw.githubusercontent.com/xlzs001/workbuddy-loon/main/workbuddy.js, argument=panel, title=WorkBuddy, interval=1800, timeout=30
 
