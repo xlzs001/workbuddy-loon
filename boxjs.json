@@ -1,11 +1,16 @@
 {
+  "id": "workbuddy.loon.app.sub",
   "name": "WorkBuddy 签到（88lin 移植版）",
+  "author": "@xlzs001",
+  "icon": "https://raw.githubusercontent.com/88lin/workbuddy-auto-signin/main/assets/cover.jpg",
+  "repo": "https://github.com/xlzs001/workbuddy-loon",
+  "description": "Loon / Surge / QuantumultX 版 WorkBuddy 自动签到，原 Python 版 88lin/workbuddy-auto-signin 的 JS 移植，支持多账号。",
   "apps": [
     {
       "id": "workbuddy.signin",
       "name": "WorkBuddy 自动签到",
       "author": "@xlzs001",
-      "repo": "https://github.com/88lin/workbuddy-auto-signin",
+      "repo": "https://github.com/xlzs001/workbuddy-loon",
       "icons": [
         "https://raw.githubusercontent.com/88lin/workbuddy-auto-signin/main/assets/cover.jpg"
       ],
@@ -84,28 +89,28 @@
         {
           "id": "WorkBuddy_EnableGrowth",
           "name": "成长中心",
-          "val": "1",
+          "val": true,
           "type": "boolean",
           "desc": "开启后自动领旅行礼物、派 Buddy、接任务领奖、补登、连登兑换、开盲盒。"
         },
         {
           "id": "WorkBuddy_EnableBuddyOpen",
           "name": "Buddy 能量盲盒",
-          "val": "1",
+          "val": true,
           "type": "boolean",
           "desc": "能量攒够就开 Buddy 盲盒。能量没有其它消耗出口，一般保持开启。"
         },
         {
           "id": "WorkBuddy_Notify",
           "name": "发送通知",
-          "val": "1",
+          "val": true,
           "type": "boolean",
           "desc": "关闭后脚本完全静默，只写 BoxJS 的 WorkBuddy_LastReport。"
         },
         {
           "id": "WorkBuddy_LogEmpty",
           "name": "轮询空跑也通知",
-          "val": "0",
+          "val": false,
           "type": "boolean",
           "desc": "默认只在真领到东西或出错时通知，避免「已签过 / Buddy 还在路上」刷屏。"
         }
