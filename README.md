@@ -31,6 +31,7 @@ Loon 定时触发、BoxJS 存令牌看结果，不用开着电脑。
 | `boxjs.json` | BoxJS 订阅，提供配置面板与 12 个存储键（含账号池） |
 | `accounts-slim.py` | **多账号**：把切号工具导出的账号 JSON 压成一行、直接粘进 BoxJS |
 | `export-token.py` | **单账号**：在电脑上导出令牌，复用 signin.py 自己的探测/解密逻辑 |
+| `deploy-github.sh` | 一键部署：凭据对照扫描 → 建仓库 → 推送 → 验证 raw 地址 |
 | `tests/workbuddy-multi.test.js` | Node mock 测试（假令牌、不联网），跑多账号/账号池 URL/兑换兜底等 8 个场景 |
 
 跑测试（需要 Node，与 Loon 无关；`42` 条断言应全绿）：
@@ -92,14 +93,30 @@ Get-Content "$env:LOCALAPPDATA\CodeBuddyExtension\Data\Public\auth\workbuddy-des
 ### 第 2 步 · 把脚本托管出去
 
 Loon 需要一个能匿名访问到的 URL，所以用**公开**仓库（本项目不含任何令牌，公开是安全的）。
-本仓库已指向 `github.com/xlzs001/workbuddy-loon`：
+本仓库已指向 `github.com/xlzs001/workbuddy-loon`。
+
+**一键部署**（在仓库根目录跑）：
 
 ```bash
-# 一次性：在 https://github.com/new 建一个 public 仓库 workbuddy-loon（不要勾选任何初始化文件）
+GH_TOKEN=github_pat_xxxx ./deploy-github.sh
+#   1) 先拿切号工具导出的账号文件做「真实凭据对照扫描」，命中就直接中止
+#   2) 用 PAT 通过 API 建仓库（已经是 422 就复用）
+#   3) 推送，token 只在那一条命令里出现，推完立刻从 remote 抹掉
+#   4) 逐个 curl raw 地址，确认 Loon 真能拉到
+```
+
+不想把 PAT 交给脚本也行，先自己 push，脚本只做检查与验证：
+
+```bash
+./deploy-github.sh          # 无 GH_TOKEN 时会提示你先在网页建好仓库，再走钥匙串 push
+```
+
+**手动部署**（等价的两条命令）：
+
+```bash
 cd workbuddy-loon
 git remote add origin https://github.com/xlzs001/workbuddy-loon.git
-git branch -M main
-git push -u origin main
+git branch -M main && git push -u origin main
 ```
 
 之后每次改脚本只要 `git add -A && git commit -m "update" && git push`。
