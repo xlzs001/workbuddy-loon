@@ -76,7 +76,7 @@ https://www.codebuddy.cn/wb-login
 | --- | --- | --- |
 | ✅ 登录成功 | 令牌已写进 BoxJS 账号池，签到接口验证通过 | 什么都不用做，以后脚本自动续期 |
 | ⚠️ 令牌已写入，但签到接口不认 | 令牌进池了，但签到接口拒绝（401/403 等） | 先在 BoxJS 手动跑一轮；确实不行就删掉这条 |
-| ❌ 登录没有完成 | 换令牌失败（`code` 过期、缺 verifier…），原因直接写在横幅里 | 回第 ① 步重登一次 |
+| ❌ 登录没有完成 | 换令牌失败（`code` 过期、缺 verifier、PKCE 参数不全…），原因直接写在横幅里 | 回第 ① 步重登一次（页面强制 PKCE S256，重登即带上新 verifier） |
 
 横幅上的「打开 BoxJS 看看」直接跳 BoxJS，「再登录一个账号」等于把这一页重开（方便连登多个号）。
 同时 Loon 与 BoxJS 各会收到一条通知；**旧版插件不会有这个回跳**，那时看通知或按第 6 节排错。
@@ -95,9 +95,9 @@ https://www.codebuddy.cn/wb-login
 两条路径（横幅出现 = 第一条通了）：
 
 - **装了插件的 MITM（推荐）**：Loon 在回调那一跳里把 `code` 换成令牌、验证可用、写进 BoxJS 账号池，
-  再回一个 `302` 把浏览器送回登录页 —— 所以**成功、失败都看得见**。PKCE 保持「关闭」（默认）。
+  再回一个 `302` 把浏览器送回登录页 —— 所以**成功、失败都看得见**。PKCE 不用管：`account-console` 这个客户端在服务端**强制 PKCE(S256)**（不带 `code_challenge_method` 会直接被 Keycloak 打回 `invalid_request`），登录页因此始终带着 PKCE，并把 verifier 编进 `state`，Loon 从回调 URL 里就能取到 —— 不用往 BoxJS 里填 `WorkBuddy_LoginVerifier`。
 - **纯浏览器（不用 Loon）**：登录完复制地址栏那一整条 URL，粘回登录页第 ② 步 → 页面里换出令牌 →
-  复制生成的账号池 JSON → 粘进 BoxJS 的「账号池」。（PKCE 开着关着都能用，开着更安全。）
+  复制生成的账号池 JSON → 粘进 BoxJS 的「账号池」。这一页同样带 PKCE，verifier 从 URL 的 `state` 里取（`<随机>~<verifier>`），所以本机没记住也能换到令牌。
 
 这样拿到的令牌带 `refresh_token`，**脚本每轮会自己续期**，基本一次登录管很久。
 

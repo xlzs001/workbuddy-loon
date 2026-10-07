@@ -60,8 +60,11 @@ console.log("\n=== 页面关键元素 ===");
 ok("有结果横幅容器", HTML.indexOf('id="banner"') > 0);
 ok("有 ✅/⚠️/❌ 三种回跳文案",
   HTML.indexOf("✅ 登录成功") > 0 && HTML.indexOf("⚠️ 令牌已写入") > 0 && HTML.indexOf("❌ 登录没有完成") > 0);
-ok("PKCE 默认是关闭（走 Loon 自动模式不需要 verifier）",
-  /<option value="0" selected>关闭/.test(HTML));
+ok("PKCE 强制开启（account-console 服务端要求，页面已无「关闭」选项）",
+  HTML.indexOf("code_challenge_method=S256") > 0 && HTML.indexOf("<option value=\"0\" selected>关闭") < 0 &&
+  HTML.indexOf("强制开启") > 0);
+ok("PKCE verifier 编进 state，回调那一步（Loon 或页面自己）都能取到",
+  HTML.indexOf('rand(16) + "~" + verifier') > 0 && HTML.indexOf('var til = st.indexOf("~")') > 0);
 ok("有「登录完没有任何提示？看这里」排错块", HTML.indexOf("登录完没有任何提示") > 0);
 ok("同源（codebuddy.cn）时不落盤：有 PERSIST 守卫",
   HTML.indexOf("var PERSIST = location.hostname.indexOf(\"codebuddy.cn\") < 0;") > 0);

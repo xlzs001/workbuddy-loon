@@ -220,5 +220,46 @@ ok("通知说明没抓到 code、也没放给网关", /没有 code/.test(r8.noti
 const d8 = r8.doneArgs.filter((a) => a && a.response).pop();
 ok("回 302 回登录页", !!d8 && d8.response.status === 302 && /wb-login\?err=/.test(d8.response.headers.Location), d8);
 
+/* ---------- 场景 9：PKCE verifier 编在回调 URL 的 state 里（登录页的做法） ---------- */
+const AT9 = jwt("uid-pkce-9", "新登录账号", Math.floor((Date.now() + 40 * DAY) / 1000));
+const r9 = runCase("场景 9：回调 state 里带 verifier → 自动当 code_verifier 用", {
+  argument: "login",
+  request: { url: "https://www.codebuddy.cn/auth/realms/copilot/account/?state=ab12cd34~VERIFIER-9-xyz&session_state=aa&code=code-9" },
+  token: (m, body) => (q(body).code_verifier === "VERIFIER-9-xyz"
+    ? { status: 200, data: { access_token: AT9, refresh_token: "RT-9", expires_in: 3600 } }
+    : { status: 400, data: { error: "invalid_grant", error_description: "Missing parameter: code_verifier" } }),
+  api: API_OK
+});
+const t9 = r9.calls.find((c) => c.url.indexOf("openid-connect/token") >= 0);
+ok("从 state 里取出 verifier 并发给令牌端点（服务端强制 PKCE 也能换到）",
+  !!t9 && q(t9.body).code_verifier === "VERIFIER-9-xyz", t9 && t9.body);
+ok("换到令牌并写入账号池", pool(r9.store).length === 1 && pool(r9.store)[0].uid === "uid-pkce-9", pool(r9.store));
+
+/* ---------- 场景 10：BoxJS 手填的 verifier 优先级更高 ---------- */
+const AT10 = jwt("uid-pkce-10", "手填优先", Math.floor((Date.now() + 40 * DAY) / 1000));
+const r10 = runCase("场景 10：BoxJS 里手填的 WorkBuddy_LoginVerifier 优先于 state", {
+  argument: "login",
+  store: { WorkBuddy_LoginVerifier: "HAND-TYPED-10" },
+  request: { url: "https://www.codebuddy.cn/auth/realms/copilot/account/?state=ab12cd34~FROM-STATE&code=code-10" },
+  token: (m, body) => (q(body).code_verifier === "HAND-TYPED-10"
+    ? { status: 200, data: { access_token: AT10, expires_in: 3600 } }
+    : { status: 400, data: { error: "invalid_grant" } }),
+  api: API_OK
+});
+const t10 = r10.calls.find((c) => c.url.indexOf("openid-connect/token") >= 0);
+ok("手填值覆盖 state 里的值", !!t10 && q(t10.body).code_verifier === "HAND-TYPED-10", t10 && t10.body);
+ok("照样登录成功", r10.notified.length === 1 && r10.notified[0].t === "WorkBuddy 登录成功", r10.notified);
+
+/* ---------- 场景 11：两边都没有 verifier → 明确让用户重新点一次登录 ---------- */
+const r11 = runCase("场景 11：没有 PKCE verifier（旧式手搓链接）", {
+  argument: "login",
+  request: { url: "https://www.codebuddy.cn/auth/realms/copilot/account/?state=nostate&code=code-11" },
+  token: () => ({ status: 400, data: { error: "invalid_grant", error_description: "Missing parameter: code_verifier" } }),
+  api: () => { throw new Error("不该打签到接口"); }
+});
+ok("通知里明确要求回登录页重新点一次（而不是让用户去填 BoxJS）",
+  /PKCE verifier/.test(r11.notified[0].b) && /重新点一次/.test(r11.notified[0].b), r11.notified[0].b);
+ok("没有把没验证的令牌写进账号池", pool(r11.store).length === 0, pool(r11.store));
+
 console.log(fails ? "\n✗ " + fails + " 个断言失败" : "\n✓ 全部断言通过");
 process.exit(fails ? 1 : 0);

@@ -53,7 +53,8 @@ hr{border:0;border-top:1px solid var(--line);margin:14px 0}
     <ol>
       <li>Loon → 插件 → 把 WorkBuddy 插件<b>更新一次</b>，确认里面有 <code>WorkBuddy手机登录</code> 这一条。</li>
       <li>Loon 设置里 <b>MITM 开关要打开</b>，且 <code>[MITM]</code> 的 hostname 含 <code>www.codebuddy.cn</code>。</li>
-      <li>不想折腾 Loon：登录完复制地址栏 URL，粘到第 ② 步，这一页自己换令牌（PKCE 开着关着都行）。</li>
+      <li>不想折腾 Loon：登录完复制地址栏 URL，粘到第 ② 步，这一页自己换令牌。</li>
+      <li>跳到 <code>…/account/?…</code> 之后屏幕上只有一段 <code>{"message":"Your IP address is not allowed"}</code>？<b>没关系</b> —— 地址栏那条 URL 里带着 <code>code=</code>，整段复制到第 ② 步就能换到令牌。</li>
       <li><code>code</code> 只有约 <b>1 分钟</b>有效期，超时了重新点一次登录。</li>
     </ol>
   </details>
@@ -63,10 +64,8 @@ hr{border:0;border-top:1px solid var(--line);margin:14px 0}
       <option value="account-console" selected>account-console（公开客户端，推荐）</option>
       <option value="account">account（备用）</option>
     </select></p>
-    <p class="dim">PKCE：<select id="pkce">
-      <option value="0" selected>关闭（默认，Loon 自动模式 / 手动粘贴都能用）</option>
-      <option value="1">开启（S256，更安全；走 Loon 自动模式时要在 BoxJS 填 WorkBuddy_LoginVerifier）</option>
-    </select></p>
+    <p class="dim">PKCE：<b>S256（强制开启，关不掉）</b> —— CodeBuddy 服务端要求，不带会被直接打回。
+      verifier 会被编进 <code>state</code> 一起回到回调 URL 里，所以走 Loon 自动模式也不用往 BoxJS 填 <code>WorkBuddy_LoginVerifier</code>。</p>
   </details>
 </div>
 
@@ -108,7 +107,7 @@ hr{border:0;border-top:1px solid var(--line);margin:14px 0}
   <h2>⑤ 全自动模式（可选）</h2>
   <p class="dim">在 Loon 里装好本仓库插件后，插件会拦下这次登录回调：把令牌<b>直接写进 BoxJS 账号池</b>、顺手验证能不能签到，然后<b>自动把浏览器送回本页</b>。这时你只要：</p>
   <ol>
-    <li>「PKCE」保持<b>关闭</b>（默认就是，不用管）</li>
+    <li>PKCE 不用管（页面强制开启 S256，verifier 会跟着回调一起带回来）</li>
     <li>点登录 → 输手机号 + 验证码</li>
     <li>等浏览器跳回本页 → 顶部出现 <b>✅ 登录成功 / ⚠️ 令牌未验证通过 / ❌ 登录没有完成</b> 的横幅（Loon 和 BoxJS 也会各收到一条通知）</li>
   </ol>
@@ -184,30 +183,33 @@ function say(el, cls, html) { el.innerHTML = '<p class="' + cls + '">' + html + 
 
 /* ---------- ① 登录 ---------- */
 $("go").onclick = function () {
-  var client = $("client").value, usePkce = $("pkce").value === "1";
-  var state = rand(16);
+  var client = $("client").value;
+  LS.set("client", client);
+  // account-console 在服务端强制 PKCE(S256)：不带 code_challenge_method 会被直接打回
+  //   .../account/?error=invalid_request&error_description=Missing+parameter%3A+code_challenge_method
+  // 所以这里没有「关掉」这个选项。
+  if (!window.crypto || !window.crypto.subtle) {
+    $("goHint").innerHTML = '<span class="err">这个地址不能用：它需要 https 才能算 PKCE，而 CodeBuddy 服务端强制要求 PKCE。' +
+      '请改用 https 版登录页（本仓库 Pages 上的 login.html，或 Loon 提供的那一页）。</span>';
+    return;
+  }
+  var verifier = rand(32) + rand(32);
+  LS.set("verifier", verifier);
+  // Keycloak 会把 state 原样回显 → 把 verifier 编进 state，Loon 回调那一步也能拿到
+  var state = rand(16) + "~" + verifier;
   LS.set("state", state);
-  var build = function (challenge) {
+  sha256(verifier).then(function (ch) {
     var q = ["client_id=" + encodeURIComponent(client),
              "response_type=code",
              "scope=" + encodeURIComponent(SCOPE),
              "redirect_uri=" + encodeURIComponent(REDIRECT),
-             "state=" + encodeURIComponent(state)];
-    if (challenge) { q.push("code_challenge=" + challenge); q.push("code_challenge_method=S256"); }
-    return AUTH_EP + "?" + q.join("&");
-  };
-  var open = function (url) { location.href = url; };
-  LS.set("client", client);
-  if (!usePkce || !window.crypto || !window.crypto.subtle) {
-    LS.del("verifier");
-    open(build(null));
-    return;
-  }
-  // PKCE 的 verifier 要留下来，回调时换令牌用
-  var verifier = rand(32) + rand(32);
-  LS.set("verifier", verifier);
-  sha256(verifier).then(function (ch) { open(build(ch)); },
-                        function () { LS.del("verifier"); open(build(null)); });
+             "state=" + encodeURIComponent(state),
+             "code_challenge=" + ch,
+             "code_challenge_method=S256"];
+    location.href = AUTH_EP + "?" + q.join("&");
+  }, function () {
+    $("goHint").innerHTML = '<span class="err">算 PKCE challenge 失败，换个浏览器或重新打开这一页再试。</span>';
+  });
 };
 
 /* ---------- ② 粘贴 + 换取 ---------- */
@@ -221,10 +223,12 @@ $("paste").onclick = function () {
 
 function parseCode(text) {
   text = String(text || "").trim();
-  if (!text) return { code: "", state: "" };
+  if (!text) return { code: "", state: "", verifier: "" };
   var m = text.match(/[?&#]code=([^&#\s]+)/) || text.match(/^code=([^&#\s]+)/);
   var s = text.match(/[?&#]state=([^&#\s]+)/);
-  return { code: m ? decodeURIComponent(m[1]) : text, state: s ? decodeURIComponent(s[1]) : "" };
+  var st = s ? decodeURIComponent(s[1]) : "";
+  var til = st.indexOf("~");            // 登录页把 PKCE verifier 编在 state 里：<随机>~<verifier>
+  return { code: m ? decodeURIComponent(m[1]) : text, state: st, verifier: til > 0 ? st.slice(til + 1) : "" };
 }
 
 function exchange(body) {
@@ -291,8 +295,13 @@ $("ex").onclick = function () {
   if (!p.code) { say($("exOut"), "err", "没找到 code，把登录后那个完整的回调网址整段粘进来。"); return; }
   var client = LS.get("client") || $("client").value || "account-console";
   var body = { grant_type: "authorization_code", client_id: client, code: p.code, redirect_uri: REDIRECT };
-  var v = LS.get("verifier");
-  if (v) body.code_verifier = v;
+  var v = LS.get("verifier") || p.verifier;   // 本机没记住就从这条回调 URL 的 state 里取
+  if (!v) {
+    say($("exOut"), "err", "这条 URL 里没有 PKCE 的 verifier（state 里没有 ~）。请回到第 ① 步重新点一次「用手机号登录」，用新给的那条回调 URL。");
+    return;
+  }
+  body.code_verifier = v;
+  LS.set("verifier", v);
   say($("exOut"), "dim", "正在换取令牌…");
   exchange(body).then(function (tok) {
     say($("exOut"), "ok", "换到了 ✓");

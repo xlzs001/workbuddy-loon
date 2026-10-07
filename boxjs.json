@@ -67,14 +67,14 @@
           "name": "手机登录用的 client（默认 account-console）",
           "val": "account-console",
           "type": "text",
-          "desc": "手机登录换令牌用的 Keycloak 公开客户端。account-console 与 account 都可用且回调地址已注册；填错会得到「Invalid client or Invalid client credentials」。改这里等于同时改登录页和 Loon 回调。"
+          "desc": "手机登录换令牌用的 Keycloak 公开客户端。account-console 与 account 都可用且回调地址已注册；填错会得到「Invalid client or Invalid client credentials」。改这里等于同时改登录页和 Loon 回调。 注意：account-console 在服务端强制 PKCE(S256)，登录页会始终带上 code_challenge。"
         },
         {
           "id": "WorkBuddy_LoginVerifier",
-          "name": "手机登录 PKCE verifier（仅登录页勾了 PKCE 时填）",
+          "name": "手机登录 PKCE verifier（一般留空）",
           "val": "",
           "type": "text",
-          "desc": "登录页勾选 PKCE 时会显示一串 verifier，需要在这里再粘一次，Loon 才能把回调换成令牌。没勾 PKCE 就留空。"
+          "desc": "登录页已把 PKCE verifier 编进回调 URL 的 state（<随机>~<verifier>），Loon 回调那一步会自动取出来，所以这里留空就行。只有当你自己手搓授权链接、state 里没带 verifier 时才需要手填。注意：account-console 在服务端强制 PKCE(S256)，完全不带 PKCE 的授权请求会被打回 invalid_request。"
         },
         {
           "id": "WorkBuddy_Budget",
