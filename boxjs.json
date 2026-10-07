@@ -14,7 +14,7 @@
       "icons": [
         "https://raw.githubusercontent.com/88lin/workbuddy-auto-signin/main/assets/cover.jpg"
       ],
-      "description": "自动领取 WorkBuddy 每日签到积分与成长中心全部奖励，支持多账号。令牌由桌面端导出（export-token.py / accounts-slim.py），或由插件里的 MITM 脚本自动保鲜。",
+      "description": "自动领取 WorkBuddy 每日签到积分与成长中心全部奖励，支持多账号。令牌可以手机登录直接获取（点上面的按钮），也可以由桌面端导出，或由插件的 MITM 脚本自动保鲜。",
       "script": "https://cdn.jsdelivr.net/gh/xlzs001/workbuddy-loon@main/workbuddy.js",
       "script_timeout": 300,
       "scripts": [
@@ -27,6 +27,8 @@
       "keys": [
         "WorkBuddy_Accounts",
         "WorkBuddy_AccountsURL",
+        "WorkBuddy_LoginVerifier",
+        "WorkBuddy_LoginClient",
         "WorkBuddy_Budget",
         "WorkBuddy_Token",
         "WorkBuddy_Uid",
@@ -46,7 +48,7 @@
           "type": "textarea",
           "autoGrow": true,
           "rows": 6,
-          "desc": "粘贴 accounts-slim.py 输出的一行 JSON 数组，例如 [{\"nickname\":\"大号\",\"access_token\":\"eyJ...\",\"uid\":\"...\"}]。填了它就不用再填下面的 accessToken/uid；支持切号工具导出的原始格式。含真实令牌，别提交到仓库。"
+          "desc": "粘贴手机登录页生成的一行 JSON，或 accounts-slim.py 的输出，例如 [{\"nickname\":\"大号\",\"access_token\":\"eyJ...\",\"uid\":\"...\",\"refresh_token\":\"...\",\"client\":\"account-console\"}]。带 refresh_token 的账号脚本会自己续期；电脑端导出的令牌没有可用的续期链路。填了它就不用再填下面的 accessToken/uid。含真实令牌，别提交到仓库。"
         },
         {
           "id": "WorkBuddy_AccountsURL",
@@ -54,6 +56,20 @@
           "val": "",
           "type": "text",
           "desc": "把账号池 JSON 托管在自己的地址上并填这里，脚本每轮会拉取并缓存（拉取时不带任何认证头）。启用后以 URL 为准，本地账号池只作为拉取失败时的兜底。"
+        },
+        {
+          "id": "WorkBuddy_LoginClient",
+          "name": "手机登录用的 client（默认 account-console）",
+          "val": "account-console",
+          "type": "text",
+          "desc": "手机登录换令牌用的 Keycloak 公开客户端。account-console 与 account 都可用且回调地址已注册；填错会得到「Invalid client or Invalid client credentials」。改这里等于同时改登录页和 Loon 回调。"
+        },
+        {
+          "id": "WorkBuddy_LoginVerifier",
+          "name": "手机登录 PKCE verifier（仅登录页勾了 PKCE 时填）",
+          "val": "",
+          "type": "text",
+          "desc": "登录页勾选 PKCE 时会显示一串 verifier，需要在这里再粘一次，Loon 才能把回调换成令牌。没勾 PKCE 就留空。"
         },
         {
           "id": "WorkBuddy_Budget",
@@ -125,7 +141,8 @@
           "type": "boolean",
           "desc": "默认只在真领到东西或出错时通知，避免「已签过 / Buddy 还在路上」刷屏。"
         }
-      ]
+      ],
+      "desc_html": "<div style=\"padding:8px 0\"><a href=\"https://cdn.jsdelivr.net/gh/xlzs001/workbuddy-loon@main/login.html\" target=\"_blank\" style=\"display:inline-block;padding:10px 18px;background:#2b7fff;color:#fff;border-radius:22px;text-decoration:none;font-weight:600\">📱 手机登录 / 续期（点这里）</a><p style=\"margin:10px 0 0;font-size:13px;line-height:1.6;color:#888\">用手机号登录一次，令牌会自动写进下面的「账号池」，<b>并且能被脚本自己续期</b>，以后不用再回电脑导出。</p></div>"
     }
   ]
 }

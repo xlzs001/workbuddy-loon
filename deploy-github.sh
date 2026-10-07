@@ -94,7 +94,7 @@ fi
 
 step "5/5 验证 raw 地址（手机端要用这三个）"
 base="https://raw.githubusercontent.com/$OWNER/$REPO/$BRANCH"
-for f in workbuddy.js WorkBuddy.plugin boxjs.json; do
+for f in workbuddy.js WorkBuddy.plugin boxjs.json login.html; do
   printf "   %-18s %s  " "$f" "$(curl -sS -o /dev/null -w '%{http_code}' "$base/$f")"
   curl -sS -o /dev/null -w "%{size_download} bytes\n" "$base/$f"
 done

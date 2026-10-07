@@ -26,25 +26,55 @@ Loon 定时触发、BoxJS 存令牌看结果，不用开着电脑。
 
 | 文件 | 作用 |
 |---|---|
-| `workbuddy.js` | 主脚本，Loon / Surge / QuantumultX 通用。同时兼任「抓令牌」和「卡片面板」两个角色，支持多账号 |
+| `workbuddy.js` | 主脚本，Loon / Surge / QuantumultX 通用。一个文件四种身份：整轮签到、抓令牌保鲜、卡片面板、**登录回调换令牌** |
+| `login.html` | **手机登录页**（纯静态，手机浏览器直接开）：登录一次即可拿令牌并写进 BoxJS 账号池 |
 | `WorkBuddy.plugin` | Loon 插件（两条 cron + MITM 抓令牌 + 可选 Panel） |
-| `boxjs.json` | BoxJS 订阅，提供配置面板与 12 个存储键（含账号池） |
+| `boxjs.json` | BoxJS 订阅，提供配置面板与 14 个存储键（含账号池），应用页上有「📱 手机登录」按钮 |
 | `accounts-slim.py` | **多账号**：把切号工具导出的账号 JSON 压成一行、直接粘进 BoxJS |
 | `export-token.py` | **单账号**：在电脑上导出令牌，复用 signin.py 自己的探测/解密逻辑 |
 | `deploy-github.sh` | 一键部署：凭据对照扫描 → 建仓库 → 推送 → 验证 raw 地址 |
-| `tests/workbuddy-multi.test.js` | Node mock 测试（假令牌、不联网），跑多账号/账号池 URL/兑换兜底等 8 个场景 |
+| `tests/workbuddy-multi.test.js` | Node mock 测试（假令牌、不联网），多账号/账号池 URL/兑换兜底/401·403/临期等 12 个场景 |
+| `tests/workbuddy-login.test.js` | Node mock 测试：手机登录换令牌、自动续期、续期失败等 5 个场景 |
 
-跑测试（需要 Node，与 Loon 无关；`42` 条断言应全绿）：
+跑测试（需要 Node，与 Loon 无关；两个文件都应全绿）：
 
 ```bash
-node tests/workbuddy-multi.test.js     # ✓ 全部断言通过
+node tests/workbuddy-multi.test.js    # 12 个场景，✓ 全部断言通过
+node tests/workbuddy-login.test.js    # 5 个场景，✓ 全部断言通过
 ```
 
 ## 2. 部署三步
 
-### 第 1 步 · 在电脑上导出令牌
+### 第 1 步 · 拿令牌
 
-有两条路，**多账号走 A**，只有一个号走 B 更省事。
+三条路，**能碰手机就走 C**（不用电脑，而且只有它能自动续期）。
+
+#### C. 手机登录（推荐，不用电脑）
+
+手机浏览器打开：
+
+```
+https://cdn.jsdelivr.net/gh/xlzs001/workbuddy-loon@main/login.html
+```
+
+（或 BoxJS → 应用 → WorkBuddy 自动签到 → 页面上的「📱 手机登录 / 续期」按钮。）
+
+点「用手机号登录」→ 走 CodeBuddy 官方登录页 → 登录完成后浏览器跳回一个
+`https://www.codebuddy.cn/auth/realms/copilot/account/?...&code=xxxx` 地址。两种用法：
+
+- **装了插件的 MITM（推荐）**：Loon 会在这一跳里把 `code` 换成令牌、验证可用，然后
+  **自动写进 BoxJS 账号池**并弹通知「WorkBuddy 登录成功」，你什么都不用做。
+  页面里把「PKCE」关掉（默认），否则要在 BoxJS 的 `WorkBuddy_LoginVerifier` 里补一次 verifier。
+- **纯浏览器（不用 Loon）**：登录前把「PKCE」打开 → 跳回来后复制地址栏那一整条 URL，
+  粘回登录页的第二步 → 页面里换出令牌 → 复制生成的账号池 JSON → 粘进 BoxJS 的「账号池」。
+
+这样拿到的令牌带 `refresh_token`，**脚本每轮会自己续期**，基本一次登录管很久。
+
+> 实测确认过的两件事：① 电脑端导出的令牌**本来就能**直接签到（`checkin-activity-status` 返回 200）；
+> ② 但电脑端的令牌用的是机密客户端 `console`，**没法**被脚本续期（续期是客户端绑定的），到期只能重导。
+> 所以：**不想再碰电脑就用 C，想要多账号批量就用 A**。
+
+#### A. 多账号（切号工具，需要电脑）
 
 #### A. 多账号（推荐）
 
@@ -225,7 +255,7 @@ cron 的 `timeout` 同步提到 960。
 `makeup_dates` 里**，最近的断点优先；日历缺少 `today`/`cells`、分数非法或同一天记录冲突时
 整段停止并标 `needs_attention`，绝不靠猜消耗补登卡。
 
-## 5. 令牌保鲜（可选但强烈建议）
+## 5. 保鲜与续期（可选但强烈建议）
 
 打开插件里的 `[MITM]` 后，只要**手机端自身**有请求打到 `copilot.tencent.com`，
 `workbuddy.js` 就会把最新的 `Authorization` / `X-User-Id` 写回 BoxJS，令牌永不过期。
@@ -239,7 +269,18 @@ cron 的 `timeout` 同步提到 960。
 
 令牌失效的表现是 `AUTH_ERROR / 令牌已失效（HTTP 401）：等同于密码错误`（WorkBuddy 没有密码，
 凭据就是 `access_token`，所以 401 就等价于「密码错误」），脚本会明确通知你，不会静默。
-和 Python 版一样，脚本**不处理 refresh token**，续期始终由桌面端负责——偶尔用一次桌面端，令牌就是活的。
+### 自动续期（手机登录来的令牌才有）
+
+账号池里带 `refresh_token` 的账号，脚本在跑之前会先续期（过期了、或 24 小时内要过期时），
+成功后通知里会多一行 `⟳ 已自动续期：昵称`，并把新的 `access_token` / `refresh_token` 写回账号池。
+
+有一条硬限制：**Keycloak 的 refresh_token 是绑定客户端的**。实测电脑版导出的令牌用
+`account-console` / `account` / `admin-cli` 去续期都会得到
+`invalid_grant: Invalid refresh token. Token client and authorized client don't match`，
+用 `console` 续期则是 `401 unauthorized_client`（它要 client_secret，而手机端给不了）。
+所以只有**手机登录页**（公开客户端 `account-console`）换来的令牌才能自己续下去——
+这也正是推荐登录页的原因。续期失败时该账号会被跳过并通知
+`自动续期失败（…），请重新登录：<登录页>`，不会拿废令牌死磕。
 
 ### 状态码 → 通知长什么样
 
@@ -248,20 +289,26 @@ cron 的 `timeout` 同步提到 960。
 | `SUCCESS` | `WorkBuddy 签到（N 个账号）/ SUCCESS +X 积分` | 领到东西了 |
 | `ALREADY` | `… / ALREADY` | 今天已签过，成长中心没有可领的 |
 | `INACTIVE` | `… / INACTIVE` | 不是签到季 / 活动未开启 |
-| `AUTH_ERROR` | `… / AUTH_ERROR：令牌失效，需重新导出` | **账号密码错误**那一类。令牌过期或与账号不匹配 → 重跑 `accounts-slim.py` |
+| `AUTH_ERROR` | `… / AUTH_ERROR：令牌失效，去手机登录页重登` | **账号密码错误**那一类（WorkBuddy 没有密码，凭据就是 `access_token`）→ 去手机登录页重登一次 |
 | `AUTH_REJECTED` | `… / AUTH_REJECTED：权限被拒绝（403）` | 令牌**能用但被服务端拦了**：未开通、被风控、企业账号权限不足 → 先确认账号状态，不是重新导出 |
 | `NO_AUTH` | `WorkBuddy 未配置 / 没读到账号…` | 账号池没保存进去（粘贴后忘了点保存最常见） |
-| 账号已失效 | `WorkBuddy 账号已失效 / 令牌全部过期，需重新导出` | 全部账号的 `expiresAt` 都过了，脚本直接告诉你要重新导出，不会报含糊的「未配置」 |
+| 账号已失效 | `WorkBuddy 账号已失效 / 令牌过期且续期失败，需重新登录` | 全部账号要么过期要么续期失败，脚本直接告诉你去登录页，不会报含糊的「未配置」 |
 | 临期预警 | 正文末尾 `⚠️ 令牌即将过期：昵称（2026-11-13，约 2 天内过期）` | 还有 3 天以内到期就提前提醒，`WorkBuddy_LastJSON.expiring` 也会标记；临期账号照常参与本轮 |
+| 登录成功 | `WorkBuddy 登录成功 / 手机号账号 · 可用 ✓` | 手机登录回调已被脚本处理，令牌进账号池且能被续期 |
+| 登录未验证 | `WorkBuddy 登录（令牌未验证通过） / …` | 令牌写进去了，但签到接口回报 401/403：这个客户端签发的令牌可能不被接受，在 BoxJS 里删掉这条即可 |
 
 ## 6. 排错
 
 | 现象 | 处理 |
 |---|---|
 | 通知 `NO_AUTH / 未找到 accessToken` | BoxJS 里没填，或键名被改。确认 key 是 `WorkBuddy_Accounts`（多账号）或 `WorkBuddy_Token` |
-| 通知 `AUTH_ERROR / 令牌已失效（HTTP 401）` | 令牌过期或凭据与账号不匹配（等同密码错误），重新跑 `accounts-slim.py` / `export-token.py` |
+| 通知 `AUTH_ERROR / 令牌已失效（HTTP 401）` | 令牌过期或凭据与账号不匹配（等同密码错误）→ 去手机登录页重登一次（或重跑 `accounts-slim.py` / `export-token.py`） |
 | 通知 `AUTH_REJECTED / HTTP 403 权限被拒绝` | 令牌本身有效但服务端拒绝：账号未开通 / 被风控 / 企业账号权限不足，先确认账号状态 |
-| 以后所有请求都 401 | 桌面端退出登录过、或换了账号，重新导出即可 |
+| 以后所有请求都 401 | 桌面端退出登录过、或换了账号，重新登录/导出即可 |
+| 手机登录后没有通知 | ① 确认插件里有 `WorkBuddy手机登录` 这条规则、`[MITM]` 的 hostname 含 `www.codebuddy.cn`、且 Loon 的 MITM 开关和证书都正常；② 没走 Loon 就用登录页的「粘贴回调 URL」那条路 |
+| 登录换令牌报 `invalid_grant: Code not valid` | 那个 `code` 已经用过或超过约 1 分钟：重新点一次登录，回调 URL 要当场粘贴 |
+| 登录报 `unauthorized_client` | `WorkBuddy_LoginClient` 被改成了机密客户端（如 `console`）→ 填回 `account-console` |
+| 续期报 `Token client and authorized client don't match` | 这条令牌是电脑端导出的，续不了；用手机登录页重登一次，让它带 `client` 字段 |
 | 只有一部分账号跑到了 | 看通知末尾的 `已跳过（原因）`：过期 / 缺 uid / 重复都会被点名；`总预算耗尽，本轮跳过` 则调大 `WorkBuddy_Budget` |
 | 配了账号池 URL 却报拉取失败 | 确认地址能从手机直接访问（HTTPS、无鉴权页）；失败时会自动用本地缓存，报告里会注明 |
 | 从不通知 | 检查 BoxJS 的 `WorkBuddy_Notify` 是否为 1；轮询模式下空跑默认不通知，把 `WorkBuddy_LogEmpty` 设为 1 可看每轮结果 |

@@ -9,39 +9,53 @@
 
 # ─── 使用前必读 ───────────────────────────────────────────────────────────
 # 1. 下面所有地址已指向 https://github.com/xlzs001/workbuddy-loon（想换仓库就整段替换）。
-# 2. 先用桌面端导出一次令牌，二选一：
+# 2. 拿令牌，三条路任选：
+#    · 手机登录（最省事，不用碰电脑）：浏览器打开
+#      https://cdn.jsdelivr.net/gh/xlzs001/workbuddy-loon@main/login.html
+#      用手机号登录一次，令牌会自动写进 BoxJS 的「账号池」；这种令牌还能
+#      被脚本自己续期，以后基本不用管。也可以在 BoxJS 的应用页点「手机登录」。
 #    · 多账号（推荐）：python3 accounts-slim.py wb-switch-accounts-*.json
 #      把输出粘进 BoxJS 的「账号池」；也可以把 JSON 托管到自己的 URL 填进
 #      WorkBuddy_AccountsURL，之后每轮自动拉取 + 缓存。
+#      注意：电脑端导出的令牌**不能**自动续期（Keycloak 客户端绑定），到期要重导。
 #    · 单账号：python3 export-token.py /path/to/workbuddy-auto-signin
 #      再把 token / uid 填进 BoxJS 的「WorkBuddy 自动签到」面板。
 #    多账号时整轮共享 WorkBuddy_Budget（默认 540 秒），每个账号分到
 #    min(240, 总额/账号数) 秒，所以下面每一条 cron 的 timeout 都要大于 540。
-# 3. MITM 只在「手机端自身会请求 copilot.tencent.com」时才有意义（用于自动抓
-#    Authorization 更新令牌）。如果你的手机端不访问该域名，可以整段删掉 [MITM]，
-#    只保留两条 cron；代价是令牌过期后要重新导出一次。
+# 3. MITM 只在需要时才留：
+#    · 「手机登录」那条规则：拦截 Keycloak 回调把 code 换成令牌，需要 MITM
+#      www.codebuddy.cn（只在登录那一下有流量）。
+#    · 「令牌保鲜」那条：手机端自己会请求 copilot.tencent.com 时才有意义。
+#    都不需要就整段删掉 [MITM]，只保留两条 cron；代价是令牌过期后要
+#    重新登录/导出一次。
 # ─────────────────────────────────────────────────────────────────────────
 
 [Script]
-# ① 令牌保鲜：手机端只要有带 Authorization 的请求打到 copilot.tencent.com，
+# ① 手机登录回调：在登录页登完，浏览器跳回
+#    https://www.codebuddy.cn/auth/realms/copilot/account/?...&code=xxxx
+#    时由脚本在手机本地把 code 换成令牌（公开客户端 account-console），验证可用后
+#    写入 BoxJS 账号池，并弹一条通知。code 只能用一次且约 1 分钟过期。
+http-request ^https?:\/\/www\.codebuddy\.cn\/auth\/realms\/copilot\/account\/\?.*code= script-path=https://raw.githubusercontent.com/xlzs001/workbuddy-loon/main/workbuddy.js, requires-body=false, tag=WorkBuddy手机登录, timeout=30, argument=login
+
+# ② 令牌保鲜：手机端只要有带 Authorization 的请求打到 copilot.tencent.com，
 #    就自动把最新令牌写回 BoxJS，避免手动反复导出。
 http-request ^https?:\/\/copilot\.tencent\.com\/v2\/ script-path=https://raw.githubusercontent.com/xlzs001/workbuddy-loon/main/workbuddy.js, requires-body=false, tag=WorkBuddy令牌保鲜, timeout=10
 
-# ② 每日签到 + 成长中心（每天 00:05）
+# ③ 每日签到 + 成长中心（每天 00:05）
 cron "5 0 * * *" script-path=https://raw.githubusercontent.com/xlzs001/workbuddy-loon/main/workbuddy.js, tag=WorkBuddy每日签到, timeout=600, argument=auto
 
-# ③ 成长中心轮询（每 4 小时）：先补签（未签才签），再跑成长中心
+# ④ 成长中心轮询（每 4 小时）：先补签（未签才签），再跑成长中心
 #    Buddy 旅行 1~4 小时就带回礼物，只在 00:05 跑一次礼物会压到第二天；
 #    这一轮同时兜住「00:05 没开机 / 没网」导致的断签。
 cron "0 */4 * * *" script-path=https://raw.githubusercontent.com/xlzs001/workbuddy-loon/main/workbuddy.js, tag=WorkBuddy成长轮询, timeout=600, argument=poll
 
-# ④ 手动执行入口：装好后在 Loon 里（插件详情页 / 脚本列表）会多出一个可点的
+# ⑤ 手动执行入口：装好后在 Loon 里（插件详情页 / 脚本列表）会多出一个可点的
 #    「WorkBuddy 手动签到」，点一下立刻跑一轮，不用等到 00:05。
 generic script-path=https://raw.githubusercontent.com/xlzs001/workbuddy-loon/main/workbuddy.js, argument=auto, tag=WorkBuddy手动签到, timeout=600
 
-# ⑤ 可选：Loon 卡片面板（Loon 版本较新才支持 [Panel]，不支持就直接删掉）
+# ⑥ 可选：Loon 卡片面板（Loon 版本较新才支持 [Panel]，不支持就直接删掉）
 [Panel]
 WorkBuddy = script-path=https://raw.githubusercontent.com/xlzs001/workbuddy-loon/main/workbuddy.js, argument=panel, title=WorkBuddy, interval=1800, timeout=30
 
 [MITM]
-hostname = %APPEND% copilot.tencent.com
+hostname = %APPEND% copilot.tencent.com, www.codebuddy.cn

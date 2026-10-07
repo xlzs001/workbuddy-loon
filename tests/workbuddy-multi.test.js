@@ -109,9 +109,9 @@ const scenario1 = (who, method, path, body, headers) => {
 };
 
 const accounts1 = JSON.stringify([
-  { nickname: "Solici", note: "", access_token: TOK.A, uid: UID.A, domain: "www.codebuddy.cn", expiresAt: future, profile_raw: { uid: UID.A, nickname: "Solici" }, auth_raw: { domain: "www.codebuddy.cn", accessToken: TOK.A } },
-  { nickname: "65486930", note: "小号", access_token: TOK.B, uid: UID.B, domain: "www.codebuddy.cn", expiresAt: future, profile_raw: { uid: UID.B, nickname: "65486930" } },
-  { nickname: "15898900000", note: "小号2", access_token: TOK.C, uid: UID.C, domain: "www.codebuddy.cn", expiresAt: future, profile_raw: { uid: UID.C, nickname: "15898900000" } }
+  { nickname: "大号", note: "", access_token: TOK.A, uid: UID.A, domain: "www.codebuddy.cn", expiresAt: future, profile_raw: { uid: UID.A, nickname: "大号" }, auth_raw: { domain: "www.codebuddy.cn", accessToken: TOK.A } },
+  { nickname: "小号甲", note: "小号", access_token: TOK.B, uid: UID.B, domain: "www.codebuddy.cn", expiresAt: future, profile_raw: { uid: UID.B, nickname: "小号甲" } },
+  { nickname: "小号乙", note: "小号2", access_token: TOK.C, uid: UID.C, domain: "www.codebuddy.cn", expiresAt: future, profile_raw: { uid: UID.C, nickname: "小号乙" } }
 ]);
 
 const r1 = runCase("场景 1：3 账号（正常 / 成长中心 / 401）", {
@@ -121,8 +121,8 @@ const r1 = runCase("场景 1：3 账号（正常 / 成长中心 / 401）", {
 const lines1 = (r1.last && r1.last.report) ? r1.last.report.split("\n") : [];
 ok("结果取最差状态 AUTH_ERROR", r1.last && r1.last.result === "AUTH_ERROR", r1.last && r1.last.result);
 ok("LastJSON 记录 3 个账号", r1.last && r1.last.accounts && r1.last.accounts.length === 3, r1.last && r1.last.accounts && r1.last.accounts.length);
-ok("报告 3 行且带账号名", lines1.length === 3 && lines1[0].indexOf("Solici：") === 0 && lines1[1].indexOf("65486930（小号）：") === 0, lines1);
-ok("A 账号签到 +10", /Solici：成功领取 10 积分/.test(lines1[0] || ""), lines1[0]);
+ok("报告 3 行且带账号名", lines1.length === 3 && lines1[0].indexOf("大号：") === 0 && lines1[1].indexOf("小号甲（小号）：") === 0, lines1);
+ok("A 账号签到 +10", /大号：成功领取 10 积分/.test(lines1[0] || ""), lines1[0]);
 ok("A 账号派 Buddy 且跳过低价值步骤", /派 Buddy 去公园/.test(lines1[0] || "") && /没有补登卡/.test(lines1[0] || ""), lines1[0]);
 ok("B 账号今日已签（ALREADY）", /今日已签过/.test(lines1[1] || ""), lines1[1]);
 ok("B 账号领旅行礼物 +30", /领旅行礼物 \+30/.test(lines1[1] || ""), lines1[1]);
@@ -259,8 +259,8 @@ const r9 = runCase("场景 9：令牌失效（401，等同密码错误）", {
   scenario: () => [401, { code: 401, msg: "unauthorized" }]
 });
 ok("结果是 AUTH_ERROR", r9.last && r9.last.result === "AUTH_ERROR", r9.last && r9.last.result);
-ok("正文点明等同密码错误并要求重新导出", /令牌已失效（HTTP 401）：等同于密码错误/.test(r9.last && r9.last.report), r9.last && r9.last.report);
-ok("通知副标题把状态翻译成动作", /AUTH_ERROR：令牌失效，需重新导出/.test(JSON.stringify(r9.notified)), r9.notified.map((n) => n.s));
+ok("正文点明令牌失效并把手机登录页给出来", /令牌已失效（HTTP 401）/.test(r9.last && r9.last.report) && /login\.html/.test(r9.last.report), r9.last && r9.last.report);
+ok("通知副标题把状态翻译成动作", /AUTH_ERROR：令牌失效，去手机登录页重登/.test(JSON.stringify(r9.notified)), r9.notified.map((n) => n.s));
 
 /* ---------- 场景 10：403 权限被拒绝 → AUTH_REJECTED（与令牌失效区分开） ---------- */
 const r10 = runCase("场景 10：权限被拒绝（403）", {
@@ -300,7 +300,7 @@ const r12 = runCase("场景 12：令牌全部过期", {
 });
 ok("结果是 AUTH_ERROR 而不是 NO_AUTH", r12.last && r12.last.result === "AUTH_ERROR", r12.last && r12.last.result);
 ok("通知标题说明账号已失效", /账号已失效/.test(JSON.stringify(r12.notified)), r12.notified.map((n) => n.t));
-ok("正文要求重新导出", /重新导出/.test(r12.last && r12.last.report), r12.last && r12.last.report);
+ok("正文要求重新登录并给出登录页", /重新登录/.test(r12.last && r12.last.report) && /login\.html/.test(r12.last.report), r12.last && r12.last.report);
 
 console.log("\n" + (fails ? "✗ " + fails + " 个断言失败" : "✓ 全部断言通过"));
 process.exit(fails ? 1 : 0);

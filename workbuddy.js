@@ -6,14 +6,28 @@
  *   成长中心  → /v2/activity/growth/**（旅行礼物、派 Buddy、任务、补登、
  *               连登兑换、盲盒、Buddy 能量盲盒）
  *
- * 三种被调用方式（同一份脚本）：
+ * 四种被调用方式（同一份脚本）：
  *   1. cron        → 自动签到 / 成长中心轮询
  *   2. http-request → 抓取手机端请求里的 Authorization 自动保鲜令牌
  *   3. panel       → 读取上次结果做卡片展示
+ *   4. argument=login → 接管手机登录的 Keycloak 回调，把换到的令牌写进账号池
+ *                        （并顺手验证令牌能不能签到，能续期的一并记住 refresh_token）
  *******************************************/
 
 var HOST = "https://copilot.tencent.com";
 var GROWTH = HOST + "/v2/activity/growth";
+
+/* 手机登录：codebuddy 自己的 Keycloak（realm copilot）。
+ *   auth  = https://www.codebuddy.cn/auth/realms/copilot/protocol/openid-connect/auth
+ *   token = .../protocol/openid-connect/token（CORS 全开放，浏览器里也能直接换）
+ * account-console / account 是这里仅有的公开客户端（不需要 client_secret），
+ * 电脑版用的 console 是机密客户端，所以我们自己续不了它的令牌，只能重登。 */
+var LOGIN_URL = "https://cdn.jsdelivr.net/gh/xlzs001/workbuddy-loon@main/login.html";
+var KC = "https://www.codebuddy.cn/auth/realms/copilot";
+var KC_TOKEN = KC + "/protocol/openid-connect/token";
+var KC_REDIRECT = KC + "/account/";
+var KC_SCOPE = "openid profile offline_access email";
+var RENEWED = [];          // 本轮自动续期成功的账号名
 var MAKEUP_MAX = 1;        // 每轮最多消耗几张补登卡（与 signin.py 对齐）
 var GLOBAL_BUDGET = 540;   // 整轮总预算（秒），必须小于插件 cron 的 timeout
 var BUDGET = 240;          // 当前账号可用预算，按账号数摊分
@@ -190,7 +204,7 @@ var ERROR_STATES = { "NETWORK": 1, "AUTH_ERROR": 1, "ERROR": 1, "NO_AUTH": 1, "T
 
 /* 通知副标题里把状态翻译成人话，一眼知道该干什么 */
 var STATUS_HINT = {
-  "AUTH_ERROR": "令牌失效，需重新导出",
+  "AUTH_ERROR": "令牌失效，去手机登录页重登",
   "AUTH_REJECTED": "权限被拒绝（403）",
   "NO_AUTH": "没读到账号，检查账号池",
   "NETWORK": "网络不可达",
@@ -220,8 +234,8 @@ function authFail(code) {
     parts.push("权限被拒绝（HTTP 403）—— 令牌有效但服务端不接受，可能未开通、被风控或企业账号权限不足");
     return finish("AUTH_REJECTED", "HTTP 403 权限被拒绝：令牌能用但被服务端拦了，请确认账号状态（风控 / 企业账号）后重试");
   }
-  parts.push("令牌已失效（HTTP " + code + "）—— 等同于密码错误，需要重新导出");
-  finish("AUTH_ERROR", "令牌已失效（HTTP " + code + "）：等同于密码错误，请在电脑上重新导出令牌并更新 BoxJS 账号池");
+  parts.push("令牌已失效（HTTP " + code + "）—— 等同于密码错误，需要重新登录：" + LOGIN_URL);
+  finish("AUTH_ERROR", "令牌已失效（HTTP " + code + "）：去手机登录页重新登录 " + LOGIN_URL + "（或在电脑上重新导出令牌）");
 }
 
 /* ---------------- 步骤 1：签到 ---------------- */
@@ -672,7 +686,12 @@ function normAccount(o, idx) {
     uid: uid ? String(uid) : "",
     enterpriseId: String(o.enterpriseId || o.enterprise_id || ""),
     domain: String(o.domain || auth.domain || ""),
-    expiresAt: asInt(o.expiresAt || o.expires_at, 0)
+    expiresAt: asInt(o.expiresAt || o.expires_at, 0),
+    // 手机登录页换来的令牌带这两个字段：refresh_token 用来续期，client 是签发它的客户端
+    // （续期必须用同一个 client，所以得记住）
+    refreshToken: String(o.refresh_token || o.refreshToken || auth.refreshToken || ""),
+    client: String(o.client || o.client_id || ""),
+    needRefresh: false
   };
 }
 
@@ -705,7 +724,11 @@ function loadAccounts() {
     if (!a) { out.skipped.push({ name: "账号 " + (i + 1), reason: "缺少可用的 access_token" }); continue; }
     if (!a.uid) { out.skipped.push({ name: a.name, reason: "缺少 uid（X-User-Id）" }); continue; }
     if (seen[a.uid]) { out.skipped.push({ name: a.name, reason: "uid 与前面的账号重复" }); continue; }
-    if (expired(a)) { out.skipped.push({ name: a.name, reason: "令牌已过期（" + stamp(a.expiresAt) + "）" }); continue; }
+    if (expired(a)) {
+      // 有 refresh_token 就别急着丢：登录页换来的令牌可以自己续期
+      if (!a.refreshToken) { out.skipped.push({ name: a.name, reason: "令牌已过期（" + stamp(a.expiresAt) + "）" }); continue; }
+      a.needRefresh = true;
+    }
     seen[a.uid] = true;
     out.list.push(a);
   }
@@ -824,7 +847,8 @@ function finalize() {
       }
     }
   }
-  if (soon.length) lines.push("⚠️ 令牌即将过期：" + soon.join("、") + " —— 请尽快在电脑上重新导出并更新账号池");
+  if (soon.length) lines.push("⚠️ 令牌即将过期：" + soon.join("、") + " —— 到期后会自动续期；续不了就去手机登录页重登：" + LOGIN_URL);
+  if (RENEWED.length) lines.push("⟳ 已自动续期：" + RENEWED.join("、"));
   if (!lines.length) lines.push(ctx.text || "无操作");
   // 全部被跳过时，除了每个账号的原因，再补一行「该怎么办」
   else if (!RESULTS.length && ctx.text && lines.join("\n").indexOf(ctx.text) < 0) lines.push(ctx.text);
@@ -861,6 +885,212 @@ function finalize() {
     notify(title, sub, trunc(text, 700));
   }
   try { if (typeof $done !== "undefined") $done(); } catch (e) {}
+}
+
+/* ---------------- 手机登录 / 自动续期 ---------------- */
+
+/* Keycloak 令牌端点：application/x-www-form-urlencoded（不是 JSON） */
+function kcToken(body, cb) {
+  var pairs = [];
+  for (var k in body) {
+    if (!body.hasOwnProperty(k) || body[k] === undefined || body[k] === null) continue;
+    pairs.push(encodeURIComponent(k) + "=" + encodeURIComponent(String(body[k])));
+  }
+  $httpClient.post({
+    url: KC_TOKEN,
+    headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
+    body: pairs.join("&")
+  }, function (err, resp, data) {
+    var code = 0;
+    try { code = asInt((resp && (resp.status || resp.statusCode)) || 0, 0); } catch (e) {}
+    var json = null;
+    try { json = JSON.parse(data); } catch (e) {}
+    var okc = (code >= 200 && code < 300);
+    // 日志只打长度和错误码，绝不打印令牌
+    log((okc ? "· " : "× ") + "TOKEN " + (body.grant_type || "") + " → " + code +
+        (okc ? "" : "  " + trunc((json && (json.error_description || json.error)) || String(data || ""), 140)));
+    if (err) return cb(-1, { error: String(err) });
+    cb(code, json || { raw: String(data == null ? "" : data).slice(0, 200) });
+  });
+}
+
+var B64C = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+function b64decode(s) {
+  s = String(s).replace(/-/g, "+").replace(/_/g, "/").replace(/[^A-Za-z0-9+/]/g, "");
+  var out = "", buf = 0, bits = 0;
+  for (var i = 0; i < s.length; i++) {
+    var v = B64C.indexOf(s.charAt(i));
+    if (v < 0) continue;
+    buf = (buf << 6) | v;
+    bits += 6;
+    if (bits >= 8) { bits -= 8; out += String.fromCharCode((buf >> bits) & 0xFF); }
+  }
+  return out;
+}
+
+/* 只读 JWT 载荷。别做签名校验——令牌是服务端签的，我们只取 sub/nickname/exp */
+function jwtPayload(tok) {
+  try {
+    var raw = b64decode(String(tok).split(".")[1]);
+    try { raw = decodeURIComponent(escape(raw)); } catch (e) {}
+    return JSON.parse(raw);
+  } catch (e) { return {}; }
+}
+
+/* 账号池里的一条记录（字段名与切号工具导出的 JSON 对齐） */
+function poolRecord(tokRes, clientId) {
+  var pl = jwtPayload(tokRes.access_token || "");
+  return {
+    nickname: String(pl.nickname || pl.preferred_username || pl.name || "账号"),
+    access_token: String(tokRes.access_token || ""),
+    refresh_token: String(tokRes.refresh_token || ""),
+    uid: String(pl.sub || ""),
+    expiresAt: pl.exp ? pl.exp * 1000 : 0,
+    domain: "www.codebuddy.cn",
+    client: clientId,
+    refreshedAt: Date.now()
+  };
+}
+
+/* 写回账号池：同 uid 覆盖（保留原有 nickname 等字段），新 uid 追加 */
+function upsertPool(rec, cb) {
+  var raw = store("WorkBuddy_Accounts", "");
+  var data = [];
+  if (raw) {
+    try { data = JSON.parse(raw); } catch (e) { data = []; }
+  }
+  if (data && !Array.isArray(data)) data = data.accounts || data.list || data.records || data.data || [];
+  if (!Array.isArray(data)) data = [];
+
+  var found = -1;
+  for (var i = 0; i < data.length; i++) {
+    var o = data[i] || {};
+    var prof = (o.profile_raw && typeof o.profile_raw === "object") ? o.profile_raw : {};
+    if (String(o.uid || prof.uid || "") === String(rec.uid)) { found = i; break; }
+  }
+  if (found >= 0) {
+    var old = data[found];
+    old.access_token = rec.access_token;
+    if (rec.refresh_token) old.refresh_token = rec.refresh_token;
+    if (rec.client) old.client = rec.client;
+    old.expiresAt = rec.expiresAt;
+    old.refreshedAt = rec.refreshedAt;
+    if (!old.nickname) old.nickname = rec.nickname;
+    if (!old.uid) old.uid = rec.uid;
+  } else {
+    data.push(rec);
+  }
+  save("WorkBuddy_Accounts", JSON.stringify(data));
+  log("⤴ 账号池已更新：" + (found >= 0 ? "覆盖" : "新增") + "「" + rec.nickname + "」，共 " + data.length + " 条");
+  if (cb) cb(found >= 0, data.length);
+}
+
+/* 用 refresh_token 换新令牌。只有签发它的客户端能续，所以 client 必须跟着记录一起存 */
+function doRefresh(a, cb) {
+  var clientId = a.client || store("WorkBuddy_LoginClient", "account-console");
+  kcToken({
+    grant_type: "refresh_token", client_id: clientId, refresh_token: a.refreshToken, scope: KC_SCOPE
+  }, function (code, tok) {
+    if (code === -1) return cb(false, "网络不可达");
+    if (!(code >= 200 && code < 300) || !tok || !tok.access_token) {
+      var why = (tok && (tok.error_description || tok.error)) || httpLabel(code);
+      return cb(false, trunc(why, 140));
+    }
+    var rec = poolRecord(tok, clientId);
+    a.token = rec.access_token;
+    if (rec.expiresAt) a.expiresAt = rec.expiresAt;
+    if (rec.refresh_token) a.refreshToken = rec.refresh_token;
+    a.needRefresh = false;
+    upsertPool(rec);
+    cb(true, "");
+  });
+}
+
+/* 每轮开始前，先把过期/临期的账号续掉（续期失败的踢出本轮，避免拿废令牌去打接口） */
+function refreshPass(cb) {
+  var queue = [];
+  for (var i = 0; i < ACCOUNTS.length; i++) {
+    var a = ACCOUNTS[i];
+    if (!a.refreshToken) continue;
+    if (a.needRefresh || (a.expiresAt > 1e12 && a.expiresAt - Date.now() < 86400000)) queue.push(a);
+  }
+  if (!queue.length) return cb();
+  log("⟳ 需要续期的账号：" + queue.length + " 个");
+  var idx = 0;
+  (function one() {
+    if (idx >= queue.length) return cb();
+    var a = queue[idx++];
+    doRefresh(a, function (ok, why) {
+      if (ok) { RENEWED.push(a.name); log("⟳ " + a.name + "：已自动续期"); }
+      else { a.renewFailed = why; a.token = ""; log("⟳ " + a.name + "：续期失败（" + why + "）"); }
+      one();
+    });
+  })();
+}
+
+/* argument=login：Loon 拦下 Keycloak 的登录回调，我们直接把 code 换成令牌
+ * （脚本里换没有跨域问题，也不用把码贴来贴去） */
+function loginCallback() {
+  var url = ($request && $request.url) || "";
+  var clientId = store("WorkBuddy_LoginClient", "account-console");
+  var m = String(url).match(/[?&]code=([^&#]+)/);
+  var codeStr = m ? decodeURIComponent(m[1]) : "";
+  log("⇢ 登录回调：client=" + clientId + "，code 长度=" + codeStr.length);
+
+  var bail = function (title, sub, msg) {
+    notify(title, sub, msg);
+    try { $done({}); } catch (e) {}
+  };
+  if (!codeStr) return bail("WorkBuddy 登录", "没抓到 code", "回调地址里没有 code：" + trunc(url, 200));
+
+  var body = { grant_type: "authorization_code", client_id: clientId, code: codeStr, redirect_uri: KC_REDIRECT };
+  var verifier = store("WorkBuddy_LoginVerifier", "");
+  if (verifier) body.code_verifier = verifier;
+
+  kcToken(body, function (code, tok) {
+    if (!(code >= 200 && code < 300) || !tok || !tok.access_token) {
+      var why = (tok && (tok.error_description || tok.error)) || httpLabel(code);
+      return bail("WorkBuddy 登录失败", "换令牌失败", "client=" + clientId + "：" + trunc(why, 240) +
+        "\ncode 只有约 1 分钟有效期，过期就回登录页重新登一次。");
+    }
+    var rec = poolRecord(tok, clientId);
+    if (!rec.uid) return bail("WorkBuddy 登录失败", "令牌里没有 uid", "换到了令牌但缺少 sub 声明，无法当 X-User-Id 用，没有写入账号池。");
+
+    // 立刻拿签到接口验一次：令牌能不能真用（这一步很关键，省得每天跑完才知道不行）
+    $httpClient.post({
+      url: HOST + "/v2/billing/meter/checkin-activity-status",
+      headers: {
+        "Accept": "application/json", "Authorization": "Bearer " + rec.access_token,
+        "Content-Type": "application/json", "User-Agent": "WorkBuddy",
+        "X-User-Id": rec.uid, "X-Domain": rec.domain || "www.codebuddy.cn"
+      },
+      body: "{}"
+    }, function (err2, resp2, data2) {
+      var vcode = 0;
+      try { vcode = asInt((resp2 && (resp2.status || resp2.statusCode)) || 0, 0); } catch (e) {}
+      var vbody = null;
+      try { vbody = JSON.parse(data2); } catch (e) {}
+      var usable = (vcode === 200 && asInt(dig(vbody, "code"), -1) === 0);
+      var extra = "昵称：" + rec.nickname + "\nuid：" + rec.uid +
+        "\n有效至：" + (rec.expiresAt ? stamp(rec.expiresAt) : "未知") +
+        "\n可续期：" + (rec.refresh_token ? "是（已记住 refresh_token）" : "否（登录时没拿到 offline_access）");
+
+      if (usable) {
+        upsertPool(rec);
+        log("✓ 登录成功并验证通过：" + rec.nickname + "（uid " + rec.uid + "）");
+        notify("WorkBuddy 登录成功", rec.nickname + " 已写入账号池",
+          extra + "\n签到接口验证：可用 ✓\n\n以后令牌到期脚本会自己续期，不用再登录。");
+      } else {
+        var tail = (vcode === 401 || vcode === 403)
+          ? "签到接口回报 " + httpLabel(vcode) + "：这条令牌签不了到（这个客户端签发的令牌可能不被接受）。已写入账号池，不行就在 BoxJS 里删掉这条。"
+          : "签到接口回报 " + httpLabel(vcode) + "（" + trunc(String(data2 || ""), 120) + "）。已写入账号池，可手动跑一轮再看。";
+        upsertPool(rec);
+        log("! 登录换到令牌但验证失败：HTTP " + vcode);
+        notify("WorkBuddy 登录（令牌未验证通过）", rec.nickname + " 已写入账号池", extra + "\n" + tail);
+      }
+      try { $done({}); } catch (e) {}
+    });
+  });
 }
 
 /* ---------------- 入口 ---------------- */
@@ -934,6 +1164,8 @@ function panel() {
 }
 
 (function main() {
+  if (argument() === "login") return loginCallback();
+
   if (argument() === "panel") return panel();
 
   if (typeof $request !== "undefined" && $request && $request.headers) return captureToken();
@@ -965,26 +1197,45 @@ function begin(list, skipped) {
       "，解析出 " + list.length + " 个账号");
   for (var si = 0; si < SKIPPED.length; si++) log("⤫ 跳过 " + SKIPPED[si].name + "：" + SKIPPED[si].reason);
 
-  if (!ACCOUNTS.length) {
-    var why = SKIPPED.length
-      ? SKIPPED.map(function (s) { return s.name + "：" + s.reason; }).join("；")
-      : "未找到 accessToken，请先在 BoxJS 里填写 WorkBuddy_Token 或 WorkBuddy_Accounts";
-    // 全是「令牌已过期」时，报「账号已失效」而不是含糊的「未配置」——这是需要重新导出，不是没填
-    var expiredCnt = 0;
-    for (var ei = 0; ei < SKIPPED.length; ei++) {
-      if (String(SKIPPED[ei].reason).indexOf("过期") >= 0) expiredCnt++;
+  // 先续期（手机登录页换来的令牌能自己续），再跑签到
+  refreshPass(function () {
+    var alive = [];
+    for (var ai = 0; ai < ACCOUNTS.length; ai++) {
+      if (ACCOUNTS[ai].renewFailed) {
+        SKIPPED.push({ name: ACCOUNTS[ai].name, reason: "自动续期失败（" + ACCOUNTS[ai].renewFailed + "），请重新登录：" + LOGIN_URL });
+        continue;
+      }
+      if (!ACCOUNTS[ai].token) { SKIPPED.push({ name: ACCOUNTS[ai].name, reason: "没有可用令牌" }); continue; }
+      alive.push(ACCOUNTS[ai]);
     }
-    if (expiredCnt && expiredCnt === SKIPPED.length) {
-      notify("WorkBuddy 账号已失效", "令牌全部过期，需重新导出", why);
-      return finish("AUTH_ERROR", "账号令牌全部已过期 —— 请在电脑上重新导出令牌并更新 BoxJS 账号池");
-    }
-    notify("WorkBuddy 未配置", "没有可用账号", why);
-    return finish("NO_AUTH", why);
-  }
+    ACCOUNTS = alive;
+    proceed();
+  });
 
-  // 整个 cron 必须跑完所有账号，故每个账号分到的预算 = 总预算 / 账号数
-  BUDGET = Math.max(60, Math.min(240, Math.floor(GLOBAL_BUDGET / ACCOUNTS.length)));
-  accIndex = 0;
-  RESULTS = [];
-  nextAccount();
+  function proceed() {
+    if (!ACCOUNTS.length) {
+      var why = SKIPPED.length
+        ? SKIPPED.map(function (s) { return s.name + "：" + s.reason; }).join("；")
+        : "未找到 accessToken，请先在 BoxJS 里填写 WorkBuddy_Token 或 WorkBuddy_Accounts";
+      // 全是「令牌已过期」时，报「账号已失效」而不是含糊的「未配置」——这是需要重新登录，不是没填
+      var expiredCnt = 0, renewCnt = 0;
+      for (var ei = 0; ei < SKIPPED.length; ei++) {
+        var rsn = String(SKIPPED[ei].reason);
+        if (rsn.indexOf("过期") >= 0) expiredCnt++;
+        if (rsn.indexOf("续期失败") >= 0) renewCnt++;
+      }
+      if ((expiredCnt || renewCnt) && expiredCnt + renewCnt === SKIPPED.length) {
+        notify("WorkBuddy 账号已失效", "令牌过期且续期失败，需重新登录", why);
+        return finish("AUTH_ERROR", "账号令牌全部已过期（或续期失败）—— 请到手机登录页重新登录：" + LOGIN_URL);
+      }
+      notify("WorkBuddy 未配置", "没有可用账号", why);
+      return finish("NO_AUTH", why);
+    }
+
+    // 整个 cron 必须跑完所有账号，故每个账号分到的预算 = 总预算 / 账号数
+    BUDGET = Math.max(60, Math.min(240, Math.floor(GLOBAL_BUDGET / ACCOUNTS.length)));
+    accIndex = 0;
+    RESULTS = [];
+    nextAccount();
+  }
 }
