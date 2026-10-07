@@ -134,7 +134,7 @@ ok("B 账号只兑换了 1 档", r1.calls.filter((c) => /B POST \/v2\/activity\/
 ok("A 账号空状态/已领档位不发请求（与 upstream 一致）", r1.calls.filter((c) => /A POST \/v2\/activity\/growth\/redeem$/.test(c)).length === 0, r1.calls);
 ok("B 账号开盲盒", /开盲盒获得/.test(lines1[1] || ""), lines1[1]);
 ok("B 账号开 Buddy 盲盒 ×2", /开 Buddy 盲盒 ×2/.test(lines1[1] || ""), lines1[1]);
-ok("C 账号认证失败且不继续", /认证/.test(lines1[2] || ""), lines1[2]);
+ok("C 账号认证失败且不继续", /令牌已失效（HTTP 401）/.test(lines1[2] || ""), lines1[2]);
 ok("总积分 110（10+30+20+50）", r1.last && r1.last.credits === 110, r1.last && r1.last.credits);
 ok("通知标题带账号数", r1.notified.length > 0 && /3 个账号/.test(r1.notified[0].t), r1.notified[0]);
 ok("每个账号的请求都带自己的令牌", r1.calls.filter((c) => c.indexOf("A ") === 0).length > 0 && r1.calls.filter((c) => c.indexOf("B ") === 0).length > 0, null);
@@ -249,6 +249,58 @@ const r8 = runCase("场景 8：账号池 URL 挂了且无缓存", {
 });
 ok("给 NO_AUTH 而不是静默", r8.last && r8.last.result === "NO_AUTH", r8.last && r8.last.result);
 ok("报告说明无账号池可用", /拉取失败，且本地没有账号池/.test(r8.last && r8.last.report), r8.last && r8.last.report);
+
+/* ---------- 场景 9：令牌失效 401 → AUTH_ERROR，并给出可执行提示 ---------- */
+const r9 = runCase("场景 9：令牌失效（401，等同密码错误）", {
+  store: {
+    WorkBuddy_Accounts: JSON.stringify([{ nickname: "失效号", access_token: TOK.A, uid: UID.A, expiresAt: future }]),
+    WorkBuddy_EnableGrowth: "0"
+  },
+  scenario: () => [401, { code: 401, msg: "unauthorized" }]
+});
+ok("结果是 AUTH_ERROR", r9.last && r9.last.result === "AUTH_ERROR", r9.last && r9.last.result);
+ok("正文点明等同密码错误并要求重新导出", /令牌已失效（HTTP 401）：等同于密码错误/.test(r9.last && r9.last.report), r9.last && r9.last.report);
+ok("通知副标题把状态翻译成动作", /AUTH_ERROR：令牌失效，需重新导出/.test(JSON.stringify(r9.notified)), r9.notified.map((n) => n.s));
+
+/* ---------- 场景 10：403 权限被拒绝 → AUTH_REJECTED（与令牌失效区分开） ---------- */
+const r10 = runCase("场景 10：权限被拒绝（403）", {
+  store: {
+    WorkBuddy_Accounts: JSON.stringify([{ nickname: "受限号", access_token: TOK.A, uid: UID.A, expiresAt: future }]),
+    WorkBuddy_EnableGrowth: "0"
+  },
+  scenario: () => [403, { code: 403, msg: "forbidden" }]
+});
+ok("结果是 AUTH_REJECTED 而不是 AUTH_ERROR", r10.last && r10.last.result === "AUTH_REJECTED", r10.last && r10.last.result);
+ok("提示指向账号状态而不是重新导出", /HTTP 403 权限被拒绝/.test(r10.last && r10.last.report) && /风控|企业账号/.test(r10.last && r10.last.report), r10.last && r10.last.report);
+ok("副标题区分 403", /AUTH_REJECTED：权限被拒绝（403）/.test(JSON.stringify(r10.notified)), r10.notified.map((n) => n.s));
+
+/* ---------- 场景 11：令牌 2 天内过期 → 临期预警（照常跑，不跳过） ---------- */
+const soonExp = Date.now() + 2 * 86400000 + 60000;
+const r11 = runCase("场景 11：令牌临期预警", {
+  store: {
+    WorkBuddy_Accounts: JSON.stringify([{ nickname: "临期号", access_token: TOK.A, uid: UID.A, expiresAt: soonExp }]),
+    WorkBuddy_EnableGrowth: "0"
+  },
+  scenario: (who, method, path) => {
+    if (path === "/v2/billing/meter/checkin-activity-status") return [200, { active: true, today_checked_in: true, streak_days: 6 }];
+    return [200, {}];
+  }
+});
+ok("临期账号照常参与本轮", r11.last && r11.last.accounts.length === 1, r11.last && r11.last.accounts);
+ok("报告带临期警告行", /⚠️ 令牌即将过期：临期号/.test(r11.last && r11.last.report), r11.last && r11.last.report);
+ok("LastJSON 标记 expiring", r11.last && r11.last.expiring === 1, r11.last && r11.last.expiring);
+ok("即使本轮无事发生也发通知", r11.notified.length >= 1, r11.notified.length);
+
+/* ---------- 场景 12：令牌全部过期 → 「账号已失效」而不是含糊的「未配置」 ---------- */
+const r12 = runCase("场景 12：令牌全部过期", {
+  store: {
+    WorkBuddy_Accounts: JSON.stringify([{ nickname: "过期号", access_token: TOK.A, uid: UID.A, expiresAt: Date.now() - 1000 }])
+  },
+  scenario: () => [200, {}]
+});
+ok("结果是 AUTH_ERROR 而不是 NO_AUTH", r12.last && r12.last.result === "AUTH_ERROR", r12.last && r12.last.result);
+ok("通知标题说明账号已失效", /账号已失效/.test(JSON.stringify(r12.notified)), r12.notified.map((n) => n.t));
+ok("正文要求重新导出", /重新导出/.test(r12.last && r12.last.report), r12.last && r12.last.report);
 
 console.log("\n" + (fails ? "✗ " + fails + " 个断言失败" : "✓ 全部断言通过"));
 process.exit(fails ? 1 : 0);

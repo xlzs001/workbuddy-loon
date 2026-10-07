@@ -188,6 +188,16 @@ function note(code, body, label, required) {
 
 var ERROR_STATES = { "NETWORK": 1, "AUTH_ERROR": 1, "ERROR": 1, "NO_AUTH": 1, "TIMEOUT": 1, "AUTH_REJECTED": 1 };
 
+/* 通知副标题里把状态翻译成人话，一眼知道该干什么 */
+var STATUS_HINT = {
+  "AUTH_ERROR": "令牌失效，需重新导出",
+  "AUTH_REJECTED": "权限被拒绝（403）",
+  "NO_AUTH": "没读到账号，检查账号池",
+  "NETWORK": "网络不可达",
+  "TIMEOUT": "执行超时",
+  "ERROR": "服务端错误"
+};
+
 function finish(result, report) {
   if (ctx.ended) return;
   ctx.ended = true;
@@ -202,9 +212,16 @@ function finish(result, report) {
   return finalize();
 }
 
+/* 认证类失败分两种，处理方式完全不同：
+ *   401 → 令牌失效（WorkBuddy 没有密码，凭据就是 access_token，等价于「密码错误」）
+ *   403 → 令牌本身有效但被服务端拒绝：未开通 / 被风控 / 企业账号权限不足 */
 function authFail(code) {
-  parts.push("认证被拒绝（" + httpLabel(code) + "），令牌可能已过期，请重新导出");
-  finish("AUTH_ERROR", "认证失败：" + httpLabel(code) + "，请重新导出令牌并更新 BoxJS");
+  if (code === 403) {
+    parts.push("权限被拒绝（HTTP 403）—— 令牌有效但服务端不接受，可能未开通、被风控或企业账号权限不足");
+    return finish("AUTH_REJECTED", "HTTP 403 权限被拒绝：令牌能用但被服务端拦了，请确认账号状态（风控 / 企业账号）后重试");
+  }
+  parts.push("令牌已失效（HTTP " + code + "）—— 等同于密码错误，需要重新导出");
+  finish("AUTH_ERROR", "令牌已失效（HTTP " + code + "）：等同于密码错误，请在电脑上重新导出令牌并更新 BoxJS 账号池");
 }
 
 /* ---------------- 步骤 1：签到 ---------------- */
@@ -794,7 +811,23 @@ function finalize() {
     lines.push(RESULTS[0].report || "无操作");
   }
   for (var j = 0; j < SKIPPED.length; j++) lines.push(SKIPPED[j].name + "：已跳过（" + SKIPPED[j].reason + "）");
+
+  // 令牌临期预警：3 天内就到期的账号提前提醒，别等某天早上发现签到全挂了
+  var soon = [];
+  for (var q = 0; q < ACCOUNTS.length; q++) {
+    var acc = ACCOUNTS[q];
+    if (acc.expiresAt > 1e12) {
+      var days = (acc.expiresAt - Date.now()) / 86400000;
+      if (days < 3) {
+        soon.push(acc.name + "（" + stamp(acc.expiresAt) + "，" +
+          (days > 0 ? "约 " + Math.max(1, Math.ceil(days)) + " 天内过期" : "已过期") + "）");
+      }
+    }
+  }
+  if (soon.length) lines.push("⚠️ 令牌即将过期：" + soon.join("、") + " —— 请尽快在电脑上重新导出并更新账号池");
   if (!lines.length) lines.push(ctx.text || "无操作");
+  // 全部被跳过时，除了每个账号的原因，再补一行「该怎么办」
+  else if (!RESULTS.length && ctx.text && lines.join("\n").indexOf(ctx.text) < 0) lines.push(ctx.text);
 
   var result;
   if (errState) result = errState;
@@ -809,6 +842,7 @@ function finalize() {
   if (creditsSum) out.credits = creditsSum;
   if (failSum) out.failures = failSum;
   if (hardSum) out.needs_attention = true;
+  if (soon.length) out.expiring = soon.length;
 
   save("WorkBuddy_LastReport", text);
   save("WorkBuddy_LastResult", result);
@@ -820,10 +854,10 @@ function finalize() {
   log("── WorkBuddy 结束：" + result + (creditsSum ? " +" + creditsSum + " 积分" : "") +
       "（成功 " + okSum + " 次" + (failSum ? "，失败 " + failSum + " 次" : "") + "）──");
   log(text);
-  var worth = hardSum > 0 || !!ERROR_STATES[result] || anySuccess || okSum > 0 || result === "INACTIVE";
+  var worth = hardSum > 0 || !!ERROR_STATES[result] || anySuccess || okSum > 0 || result === "INACTIVE" || soon.length > 0;
   if (!quiet || verbose || worth) {
     var title = "WorkBuddy 签到" + (multi ? "（" + RESULTS.length + " 个账号）" : "");
-    var sub = result + (creditsSum ? " +" + creditsSum + " 积分" : "");
+    var sub = (STATUS_HINT[result] ? result + "：" + STATUS_HINT[result] : result) + (creditsSum ? " +" + creditsSum + " 积分" : "");
     notify(title, sub, trunc(text, 700));
   }
   try { if (typeof $done !== "undefined") $done(); } catch (e) {}
@@ -935,6 +969,15 @@ function begin(list, skipped) {
     var why = SKIPPED.length
       ? SKIPPED.map(function (s) { return s.name + "：" + s.reason; }).join("；")
       : "未找到 accessToken，请先在 BoxJS 里填写 WorkBuddy_Token 或 WorkBuddy_Accounts";
+    // 全是「令牌已过期」时，报「账号已失效」而不是含糊的「未配置」——这是需要重新导出，不是没填
+    var expiredCnt = 0;
+    for (var ei = 0; ei < SKIPPED.length; ei++) {
+      if (String(SKIPPED[ei].reason).indexOf("过期") >= 0) expiredCnt++;
+    }
+    if (expiredCnt && expiredCnt === SKIPPED.length) {
+      notify("WorkBuddy 账号已失效", "令牌全部过期，需重新导出", why);
+      return finish("AUTH_ERROR", "账号令牌全部已过期 —— 请在电脑上重新导出令牌并更新 BoxJS 账号池");
+    }
     notify("WorkBuddy 未配置", "没有可用账号", why);
     return finish("NO_AUTH", why);
   }

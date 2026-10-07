@@ -237,15 +237,30 @@ cron 的 `timeout` 同步提到 960。
 - 保留 `[MITM]` 不管它——不命中就没有副作用；
 - 定期在电脑上重跑 `accounts-slim.py`（多账号）或 `export-token.py`（单账号）更新 BoxJS 里的令牌。
 
-令牌失效的表现是 `AUTH_ERROR / 认证失败：HTTP 401`，脚本会明确通知你，不会静默。
+令牌失效的表现是 `AUTH_ERROR / 令牌已失效（HTTP 401）：等同于密码错误`（WorkBuddy 没有密码，
+凭据就是 `access_token`，所以 401 就等价于「密码错误」），脚本会明确通知你，不会静默。
 和 Python 版一样，脚本**不处理 refresh token**，续期始终由桌面端负责——偶尔用一次桌面端，令牌就是活的。
+
+### 状态码 → 通知长什么样
+
+| 状态 | 通知标题 / 副标题 | 含义与处置 |
+|---|---|---|
+| `SUCCESS` | `WorkBuddy 签到（N 个账号）/ SUCCESS +X 积分` | 领到东西了 |
+| `ALREADY` | `… / ALREADY` | 今天已签过，成长中心没有可领的 |
+| `INACTIVE` | `… / INACTIVE` | 不是签到季 / 活动未开启 |
+| `AUTH_ERROR` | `… / AUTH_ERROR：令牌失效，需重新导出` | **账号密码错误**那一类。令牌过期或与账号不匹配 → 重跑 `accounts-slim.py` |
+| `AUTH_REJECTED` | `… / AUTH_REJECTED：权限被拒绝（403）` | 令牌**能用但被服务端拦了**：未开通、被风控、企业账号权限不足 → 先确认账号状态，不是重新导出 |
+| `NO_AUTH` | `WorkBuddy 未配置 / 没读到账号…` | 账号池没保存进去（粘贴后忘了点保存最常见） |
+| 账号已失效 | `WorkBuddy 账号已失效 / 令牌全部过期，需重新导出` | 全部账号的 `expiresAt` 都过了，脚本直接告诉你要重新导出，不会报含糊的「未配置」 |
+| 临期预警 | 正文末尾 `⚠️ 令牌即将过期：昵称（2026-11-13，约 2 天内过期）` | 还有 3 天以内到期就提前提醒，`WorkBuddy_LastJSON.expiring` 也会标记；临期账号照常参与本轮 |
 
 ## 6. 排错
 
 | 现象 | 处理 |
 |---|---|
 | 通知 `NO_AUTH / 未找到 accessToken` | BoxJS 里没填，或键名被改。确认 key 是 `WorkBuddy_Accounts`（多账号）或 `WorkBuddy_Token` |
-| 通知 `AUTH_ERROR / 认证失败：HTTP 401` | 令牌过期或凭据与账号不匹配，重新跑 `accounts-slim.py` / `export-token.py` |
+| 通知 `AUTH_ERROR / 令牌已失效（HTTP 401）` | 令牌过期或凭据与账号不匹配（等同密码错误），重新跑 `accounts-slim.py` / `export-token.py` |
+| 通知 `AUTH_REJECTED / HTTP 403 权限被拒绝` | 令牌本身有效但服务端拒绝：账号未开通 / 被风控 / 企业账号权限不足，先确认账号状态 |
 | 以后所有请求都 401 | 桌面端退出登录过、或换了账号，重新导出即可 |
 | 只有一部分账号跑到了 | 看通知末尾的 `已跳过（原因）`：过期 / 缺 uid / 重复都会被点名；`总预算耗尽，本轮跳过` 则调大 `WorkBuddy_Budget` |
 | 配了账号池 URL 却报拉取失败 | 确认地址能从手机直接访问（HTTPS、无鉴权页）；失败时会自动用本地缓存，报告里会注明 |
