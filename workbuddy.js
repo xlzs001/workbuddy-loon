@@ -22,7 +22,7 @@ var GROWTH = HOST + "/v2/activity/growth";
  *   token = .../protocol/openid-connect/token（CORS 全开放，浏览器里也能直接换）
  * account-console / account 是这里仅有的公开客户端（不需要 client_secret），
  * 电脑版用的 console 是机密客户端，所以我们自己续不了它的令牌，只能重登。 */
-var LOGIN_URL = "https://cdn.jsdelivr.net/gh/xlzs001/workbuddy-loon@main/login.html";
+var LOGIN_URL = "https://xlzs001.github.io/workbuddy-loon/login.html";
 var KC = "https://www.codebuddy.cn/auth/realms/copilot";
 var KC_TOKEN = KC + "/protocol/openid-connect/token";
 var KC_REDIRECT = KC + "/account/";

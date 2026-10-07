@@ -54,7 +54,7 @@ node tests/workbuddy-login.test.js    # 5 个场景，✓ 全部断言通过
 手机浏览器打开：
 
 ```
-https://cdn.jsdelivr.net/gh/xlzs001/workbuddy-loon@main/login.html
+https://xlzs001.github.io/workbuddy-loon/login.html
 ```
 
 （或 BoxJS → 应用 → WorkBuddy 自动签到 → 页面上的「📱 手机登录 / 续期」按钮。）

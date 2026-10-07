@@ -11,7 +11,7 @@
 # 1. 下面所有地址已指向 https://github.com/xlzs001/workbuddy-loon（想换仓库就整段替换）。
 # 2. 拿令牌，三条路任选：
 #    · 手机登录（最省事，不用碰电脑）：浏览器打开
-#      https://cdn.jsdelivr.net/gh/xlzs001/workbuddy-loon@main/login.html
+#      https://xlzs001.github.io/workbuddy-loon/login.html
 #      用手机号登录一次，令牌会自动写进 BoxJS 的「账号池」；这种令牌还能
 #      被脚本自己续期，以后基本不用管。也可以在 BoxJS 的应用页点「手机登录」。
 #    · 多账号（推荐）：python3 accounts-slim.py wb-switch-accounts-*.json
