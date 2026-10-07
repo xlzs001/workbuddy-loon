@@ -59,14 +59,24 @@ https://xlzs001.github.io/workbuddy-loon/login.html
 
 （或 BoxJS → 应用 → WorkBuddy 自动签到 → 页面上的「📱 手机登录 / 续期」按钮。）
 
-点「用手机号登录」→ 走 CodeBuddy 官方登录页 → 登录完成后浏览器跳回一个
-`https://www.codebuddy.cn/auth/realms/copilot/account/?...&code=xxxx` 地址。两种用法：
+点「用手机号登录」→ 走 CodeBuddy 官方登录页（手机号 + 验证码）→ 登录完成后，
+**装了插件的话浏览器会自动跳回登录页，并在页面顶部显示结果横幅**：
 
-- **装了插件的 MITM（推荐）**：Loon 会在这一跳里把 `code` 换成令牌、验证可用，然后
-  **自动写进 BoxJS 账号池**并弹通知「WorkBuddy 登录成功」，你什么都不用做。
-  页面里把「PKCE」关掉（默认），否则要在 BoxJS 的 `WorkBuddy_LoginVerifier` 里补一次 verifier。
-- **纯浏览器（不用 Loon）**：登录前把「PKCE」打开 → 跳回来后复制地址栏那一整条 URL，
-  粘回登录页的第二步 → 页面里换出令牌 → 复制生成的账号池 JSON → 粘进 BoxJS 的「账号池」。
+| 横幅 | 含义 | 你要做什么 |
+| --- | --- | --- |
+| ✅ 登录成功 | 令牌已写进 BoxJS 账号池，签到接口验证通过 | 什么都不用做，以后脚本自动续期 |
+| ⚠️ 令牌已写入，但签到接口不认 | 令牌进池了，但签到接口拒绝（401/403 等） | 先在 BoxJS 手动跑一轮；确实不行就删掉这条 |
+| ❌ 登录没有完成 | 换令牌失败（`code` 过期、缺 verifier…），原因直接写在横幅里 | 回第 ① 步重登一次 |
+
+横幅上的「打开 BoxJS 看看」直接跳 BoxJS，「再登录一个账号」等于把这一页重开（方便连登多个号）。
+同时 Loon 与 BoxJS 各会收到一条通知；**旧版插件不会有这个回跳**，那时看通知或按第 6 节排错。
+
+两条路径（横幅出现 = 第一条通了）：
+
+- **装了插件的 MITM（推荐）**：Loon 在回调那一跳里把 `code` 换成令牌、验证可用、写进 BoxJS 账号池，
+  再回一个 `302` 把浏览器送回登录页 —— 所以**成功、失败都看得见**。PKCE 保持「关闭」（默认）。
+- **纯浏览器（不用 Loon）**：登录完复制地址栏那一整条 URL，粘回登录页第 ② 步 → 页面里换出令牌 →
+  复制生成的账号池 JSON → 粘进 BoxJS 的「账号池」。（PKCE 开着关着都能用，开着更安全。）
 
 这样拿到的令牌带 `refresh_token`，**脚本每轮会自己续期**，基本一次登录管很久。
 
@@ -305,7 +315,7 @@ cron 的 `timeout` 同步提到 960。
 | 通知 `AUTH_ERROR / 令牌已失效（HTTP 401）` | 令牌过期或凭据与账号不匹配（等同密码错误）→ 去手机登录页重登一次（或重跑 `accounts-slim.py` / `export-token.py`） |
 | 通知 `AUTH_REJECTED / HTTP 403 权限被拒绝` | 令牌本身有效但服务端拒绝：账号未开通 / 被风控 / 企业账号权限不足，先确认账号状态 |
 | 以后所有请求都 401 | 桌面端退出登录过、或换了账号，重新登录/导出即可 |
-| 手机登录后没有通知 | ① 确认插件里有 `WorkBuddy手机登录` 这条规则、`[MITM]` 的 hostname 含 `www.codebuddy.cn`、且 Loon 的 MITM 开关和证书都正常；② 没走 Loon 就用登录页的「粘贴回调 URL」那条路 |
+| 手机登录后没有通知、也没回跳登录页 | ① 确认插件里有 `WorkBuddy手机登录` 这条规则（插件要**更新一次**）、`[MITM]` 的 hostname 含 `www.codebuddy.cn`、且 Loon 的 MITM 开关和证书都正常；② 没走 Loon 就用登录页第 ② 步的「粘贴回调 URL」那条路；③ `code` 只有约 1 分钟有效期，超时重登 |
 | 登录换令牌报 `invalid_grant: Code not valid` | 那个 `code` 已经用过或超过约 1 分钟：重新点一次登录，回调 URL 要当场粘贴 |
 | 登录报 `unauthorized_client` | `WorkBuddy_LoginClient` 被改成了机密客户端（如 `console`）→ 填回 `account-console` |
 | 续期报 `Token client and authorized client don't match` | 这条令牌是电脑端导出的，续不了；用手机登录页重登一次，让它带 `client` 字段 |

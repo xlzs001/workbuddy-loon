@@ -1030,6 +1030,17 @@ function refreshPass(cb) {
 
 /* argument=login：Loon 拦下 Keycloak 的登录回调，我们直接把 code 换成令牌
  * （脚本里换没有跨域问题，也不用把码贴来贴去） */
+// 换完令牌后让浏览器跳回登录页看结果。
+// http-request 脚本可以直接造一个假响应（$done({response:{status,headers,body}})，见 Loon 脚本文档），
+// 所以这里回一个 302：登录成功回到「✅ 已写入账号池」，失败回到带原因的页面 —— 无论成败都有明确反馈。
+function loginAnswer(kind, name, msg) {
+  var q;
+  if (kind === "ok") q = "?ok=1&name=" + encodeURIComponent(name || "");
+  else if (kind === "warn") q = "?warn=1&name=" + encodeURIComponent(name || "") + "&msg=" + encodeURIComponent(trunc(msg || "", 160));
+  else q = "?err=" + encodeURIComponent(trunc(msg || "登录没有完成", 200));
+  return { response: { status: 302, headers: { Location: LOGIN_URL + q }, body: "" } };
+}
+
 function loginCallback() {
   var url = ($request && $request.url) || "";
   var clientId = store("WorkBuddy_LoginClient", "account-console");
@@ -1039,7 +1050,7 @@ function loginCallback() {
 
   var bail = function (title, sub, msg) {
     notify(title, sub, msg);
-    try { $done({}); } catch (e) {}
+    try { $done(loginAnswer("err", "", msg)); } catch (e) {}
   };
   if (!codeStr) return bail("WorkBuddy 登录", "没抓到 code", "回调地址里没有 code：" + trunc(url, 200));
 
@@ -1051,7 +1062,8 @@ function loginCallback() {
     if (!(code >= 200 && code < 300) || !tok || !tok.access_token) {
       var why = (tok && (tok.error_description || tok.error)) || httpLabel(code);
       return bail("WorkBuddy 登录失败", "换令牌失败", "client=" + clientId + "：" + trunc(why, 240) +
-        "\ncode 只有约 1 分钟有效期，过期就回登录页重新登一次。");
+        "\ncode 只有约 1 分钟有效期，过期就回登录页重新登一次。" +
+        (verifier ? "" : "\n登录页勾了 PKCE 的话，需要把那次登录的 verifier 填进 BoxJS 的 WorkBuddy_LoginVerifier。"));
     }
     var rec = poolRecord(tok, clientId);
     if (!rec.uid) return bail("WorkBuddy 登录失败", "令牌里没有 uid", "换到了令牌但缺少 sub 声明，无法当 X-User-Id 用，没有写入账号池。");
@@ -1080,6 +1092,7 @@ function loginCallback() {
         log("✓ 登录成功并验证通过：" + rec.nickname + "（uid " + rec.uid + "）");
         notify("WorkBuddy 登录成功", rec.nickname + " 已写入账号池",
           extra + "\n签到接口验证：可用 ✓\n\n以后令牌到期脚本会自己续期，不用再登录。");
+        return answer(loginAnswer("ok", rec.nickname), rec.nickname);
       } else {
         var tail = (vcode === 401 || vcode === 403)
           ? "签到接口回报 " + httpLabel(vcode) + "：这条令牌签不了到（这个客户端签发的令牌可能不被接受）。已写入账号池，不行就在 BoxJS 里删掉这条。"
@@ -1087,10 +1100,17 @@ function loginCallback() {
         upsertPool(rec);
         log("! 登录换到令牌但验证失败：HTTP " + vcode);
         notify("WorkBuddy 登录（令牌未验证通过）", rec.nickname + " 已写入账号池", extra + "\n" + tail);
+        return answer(loginAnswer("warn", rec.nickname, tail), rec.nickname);
       }
-      try { $done({}); } catch (e) {}
     });
   });
+}
+
+// 主动结束本轮登录回调：先跳回登录页，再结束脚本
+function answer(doneArg, nickname) {
+  log("→ 登录回调结束：" + nickname + "，已跳回登录页展示结果");
+  try { $done(doneArg); } catch (e) {}
+  return undefined;
 }
 
 /* ---------------- 入口 ---------------- */

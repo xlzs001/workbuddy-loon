@@ -38,11 +38,24 @@ hr{border:0;border-top:1px solid var(--line);margin:14px 0}
 <h1>WorkBuddy 手机登录</h1>
 <p class="dim">在这个页面里用手机号登录 CodeBuddy，直接拿到签到要用的令牌，不用再回电脑导出。</p>
 
+<!-- 回调结果横幅：Loon 换完令牌后带着 ?ok / ?warn / ?err 跳回来，就显示在这里 -->
+<div id="banner"></div>
+
 <!-- ① 登录 -->
 <div class="card">
   <h2>① 登录（手机号 + 验证码）</h2>
   <button class="btn" id="go">用手机号登录 CodeBuddy</button>
-  <p class="dim" id="goHint">登录完浏览器会跳到一个 codebuddy 页面，<b>长按地址栏 → 拷贝</b>，回来粘到下面第 ② 步。</p>
+  <p class="dim" id="goHint">装了 Loon 插件的：登录完会自动跳回本页、顶部弹出结果。没装的：登录完把地址栏那一整条 URL 拷回来，粘到第 ② 步。</p>
+  <details>
+    <summary>登录完没有任何提示？看这里</summary>
+    <p class="dim">最可能是 Loon 没拦到这次回调，逐条查：</p>
+    <ol>
+      <li>Loon → 插件 → 把 WorkBuddy 插件<b>更新一次</b>，确认里面有 <code>WorkBuddy手机登录</code> 这一条。</li>
+      <li>Loon 设置里 <b>MITM 开关要打开</b>，且 <code>[MITM]</code> 的 hostname 含 <code>www.codebuddy.cn</code>。</li>
+      <li>不想折腾 Loon：登录完复制地址栏 URL，粘到第 ② 步，这一页自己换令牌（PKCE 开着关着都行）。</li>
+      <li><code>code</code> 只有约 <b>1 分钟</b>有效期，超时了重新点一次登录。</li>
+    </ol>
+  </details>
   <details>
     <summary>高级（一般不用改）</summary>
     <p class="dim">client_id：<select id="client">
@@ -50,8 +63,8 @@ hr{border:0;border-top:1px solid var(--line);margin:14px 0}
       <option value="account">account（备用）</option>
     </select></p>
     <p class="dim">PKCE：<select id="pkce">
-      <option value="1" selected>开启（S256，推荐）</option>
-      <option value="0">关闭（配合 Loon 自动模式）</option>
+      <option value="0" selected>关闭（默认，Loon 自动模式 / 手动粘贴都能用）</option>
+      <option value="1">开启（S256，更安全；走 Loon 自动模式时要在 BoxJS 填 WorkBuddy_LoginVerifier）</option>
     </select></p>
   </details>
 </div>
@@ -92,11 +105,11 @@ hr{border:0;border-top:1px solid var(--line);margin:14px 0}
 <!-- ⑤ Loon 自动模式 -->
 <div class="card">
   <h2>⑤ 全自动模式（可选）</h2>
-  <p class="dim">在 Loon 里装好本仓库插件后，插件会拦下这次登录回调并把令牌<b>直接写进 BoxJS 账号池</b>，还会顺手验证令牌能不能签到。这时你只要：</p>
+  <p class="dim">在 Loon 里装好本仓库插件后，插件会拦下这次登录回调：把令牌<b>直接写进 BoxJS 账号池</b>、顺手验证能不能签到，然后<b>自动把浏览器送回本页</b>。这时你只要：</p>
   <ol>
-    <li>上面第 ① 步的「PKCE」选<b>关闭</b></li>
+    <li>「PKCE」保持<b>关闭</b>（默认就是，不用管）</li>
     <li>点登录 → 输手机号 + 验证码</li>
-    <li>跳到 codebuddy 页面（可能报错，正常）→ 直接关掉，回 BoxJS 看通知</li>
+    <li>等浏览器跳回本页 → 顶部出现 <b>✅ 登录成功 / ⚠️ 令牌未验证通过 / ❌ 登录没有完成</b> 的横幅（Loon 和 BoxJS 也会各收到一条通知）</li>
   </ol>
 </div>
 
@@ -325,7 +338,44 @@ $("refresh").onclick = function () {
     }).catch(function (err) { say($("rfOut"), "err", esc(explain(err))); });
 };
 
+/* ---------- 回调横幅：Loon 换完令牌后带着 ?ok / ?warn / ?err 跳回本页 ---------- */
+function banner() {
+  var q = new URLSearchParams(location.search);
+  var el = $("banner"), html = "";
+  var name = q.get("name") || "账号";
+  var msg = q.get("msg") || "";
+  var again = '<button class="btn sec" onclick="goAgain()">再登录一个账号</button>';
+  var toBox = '<a class="btn" href="https://boxjs.com" target="_blank" rel="noreferrer" style="color:#fff">打开 BoxJS 看看</a>';
+  if (q.get("ok")) {
+    html = '<div class="card" style="border-color:var(--ok)">' +
+      '<h2 class="ok">✅ 登录成功</h2>' +
+      '<p><b>' + esc(name) + '</b> 的令牌已经写进 BoxJS 的「账号池」，并且签到接口验证通过。</p>' +
+      '<p class="dim">以后令牌快到期时脚本会自己续期，不用再登录。核对位置：BoxJS → 应用 → WorkBuddy 自动签到 → 账号池。</p>' +
+      '<div class="row">' + toBox + again + '</div></div>';
+  } else if (q.get("warn")) {
+    html = '<div class="card" style="border-color:var(--warn)">' +
+      '<h2 class="warn">⚠️ 令牌已写入，但签到接口不认</h2>' +
+      '<p><b>' + esc(name) + '</b> 的令牌已经写进账号池，但签到接口回报：</p>' +
+      (msg ? '<p class="dim">' + esc(msg) + '</p>' : '') +
+      '<p class="dim">先在 BoxJS 里手动跑一轮看看结果；确实不行就把这条从账号池删掉，继续用电脑版导出的令牌。</p>' +
+      '<div class="row">' + toBox + again + '</div></div>';
+  } else if (q.get("err")) {
+    html = '<div class="card" style="border-color:var(--err)">' +
+      '<h2 class="err">❌ 登录没有完成</h2>' +
+      '<p>' + esc(msg || "换令牌失败") + '</p>' +
+      '<p class="dim">再点一次「用手机号登录」重来即可（code 只有约 1 分钟有效期）。</p>' +
+      '<div class="row">' + again + '</div></div>';
+  }
+  if (html) {
+    el.innerHTML = html;
+    window.scrollTo(0, 0);
+    try { history.replaceState({}, "", location.pathname); } catch (e) {}
+  }
+}
+function goAgain() { location.href = location.pathname; }
+
 /* 首次渲染 */
+banner();
 renderSession();
 window.addEventListener("paste", function () {
   setTimeout(function () {

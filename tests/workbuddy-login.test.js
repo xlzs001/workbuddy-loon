@@ -34,6 +34,7 @@ function runCase(name, opts) {
   const store = Object.assign({}, opts.store || {});
   const notified = [];
   const calls = [];
+  const doneArgs = [];
   const sandbox = {
     console: { log: () => {} },
     $persistentStore: {
@@ -41,7 +42,7 @@ function runCase(name, opts) {
       write: (v, k) => { store[k] = String(v); }
     },
     $notify: (t, s, b) => notified.push({ t, s, b }),
-    $done: () => {},
+    $done: (a) => { doneArgs.push(a); },
     $argument: opts.argument,
     $request: opts.request,
     $httpClient: {
@@ -55,7 +56,7 @@ function runCase(name, opts) {
     return opts.api(method, url, body, headers);
   }
   vm.runInContext(code, vm.createContext(sandbox));
-  return { store, notified, calls, last: store["WorkBuddy_LastJSON"] ? JSON.parse(store["WorkBuddy_LastJSON"]) : null };
+  return { store, notified, calls, doneArgs, last: store["WorkBuddy_LastJSON"] ? JSON.parse(store["WorkBuddy_LastJSON"]) : null };
 }
 
 const API_OK = () => ({ status: 200, data: { code: 0, active: true, today_checked_in: true, today_credit: 5, streak_days: 4 } });
@@ -87,6 +88,13 @@ ok("通知标题是登录成功", r1.notified.length === 1 && r1.notified[0].t =
 ok("通知正文说明可用并提到以后能自动续期",
   /可用 ✓/.test(r1.notified[0].b) && /自动续期|自己续期/.test(r1.notified[0].b), r1.notified[0].b);
 ok("没有把令牌写进通知（只写长度/昵称）", !/eyJhbGciOiJub25lIn0/.test(JSON.stringify(r1.notified)), "leak");
+const d1 = r1.doneArgs.filter((a) => a && a.response).pop();
+ok("回了一个 302 让浏览器跳回登录页（所以手机上一定能看到结果）",
+  !!d1 && d1.response.status === 302, r1.doneArgs);
+ok("跳回地址带 ok=1 和昵称",
+  !!d1 && /login\.html\?ok=1&name=/.test(d1.response.headers.Location) &&
+  d1.response.headers.Location.indexOf(encodeURIComponent("手机号账号")) > 0,
+  d1 && d1.response.headers.Location);
 
 /* ---------- 场景 2：换令牌失败 ---------- */
 const r2 = runCase("场景 2：code 已失效（invalid_grant），不写账号池", {
@@ -99,6 +107,11 @@ ok("没有写入账号池", !r2.store["WorkBuddy_Accounts"], r2.store["WorkBuddy
 ok("通知标题是登录失败", r2.notified.length === 1 && r2.notified[0].t === "WorkBuddy 登录失败", r2.notified);
 ok("正文带上服务端原因并提示重登",
   /Code not valid/.test(r2.notified[0].b) && /重新登/.test(r2.notified[0].b), r2.notified[0].b);
+const d2 = r2.doneArgs.filter((a) => a && a.response).pop();
+ok("失败也跳回登录页并把原因带在 err 里（用户能看到为什么）",
+  !!d2 && d2.response.status === 302 && /login\.html\?err=/.test(d2.response.headers.Location) &&
+  decodeURIComponent(d2.response.headers.Location).indexOf("Code not valid") > 0,
+  d2 && d2.response.headers.Location);
 
 /* ---------- 场景 3：令牌换到了但签到接口不认 ---------- */
 const AT3 = jwt("uid-phone-9", "不认的账号", Math.floor((Date.now() + 40 * DAY) / 1000));
@@ -110,6 +123,10 @@ const r3 = runCase("场景 3：令牌换到但 copilot 回 401", {
 });
 ok("仍然写入账号池（让用户自己决定去留）", pool(r3.store).length === 1, pool(r3.store));
 ok("通知明确「未验证通过」", /未验证通过/.test(r3.notified[0].t), r3.notified[0].t);
+const d3 = r3.doneArgs.filter((a) => a && a.response).pop();
+ok("未验证通过也跳回登录页（warn 分支）",
+  !!d3 && d3.response.status === 302 && /login\.html\?warn=1/.test(d3.response.headers.Location),
+  d3 && d3.response.headers.Location);
 ok("正文说明这个客户端签发的令牌可能不被接受",
   /签到接口回报 HTTP 401/.test(r3.notified[0].b) && /签发的令牌可能不被接受/.test(r3.notified[0].b), r3.notified[0].b);
 
