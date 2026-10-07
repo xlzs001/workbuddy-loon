@@ -175,5 +175,50 @@ ok("报告写明续期失败并给出登录页",
 ok("没有拿废令牌去打签到接口",
   !r5.calls.some((c) => c.url.indexOf("checkin-activity-status") >= 0), r5.calls.map((c) => c.url));
 
+/* ---------- 场景 6：带 ?error= 的失败回调（没有 code） ---------- */
+/* 这条最关键：codebuddy 的网关对 /account/** 做了来源限制，非白名单 IP 直接回
+   403 {"message":"Your IP address is not allowed"}。若这种失败回调漏给网关，手机上
+   看到的就是那段 JSON。所以脚本必须自己拦住它，并跳回登录页说清原因。 */
+const r6 = runCase("场景 6：回调带 error 而不是 code（例如 PKCE 参数不全）", {
+  argument: "login",
+  request: { url: "https://www.codebuddy.cn/auth/realms/copilot/account/?error=invalid_request&error_description=Missing+parameter%3A+code_challenge_method&state=wb" },
+  token: () => { throw new Error("不该去换令牌"); },
+  api: () => { throw new Error("不该打签到接口"); }
+});
+ok("没有去请求令牌端点（没 code 就不换）",
+  !r6.calls.some((c) => c.url.indexOf("openid-connect/token") >= 0), r6.calls.map((c) => c.url));
+ok("通知说明原因（PKCE 参数不全）",
+  r6.notified.length === 1 && /invalid_request/.test(r6.notified[0].s) &&
+  /PKCE/.test(r6.notified[0].b), r6.notified);
+const d6 = r6.doneArgs.filter((a) => a && a.response).pop();
+ok("照样回 302 跳回登录页（而不是把请求放给 codebuddy 网关）",
+  !!d6 && d6.response.status === 302 && /wb-login\?err=/.test(d6.response.headers.Location),
+  d6 && d6.response.headers.Location);
+ok("跳回时带的 msg 解释了原因",
+  decodeURIComponent(d6.response.headers.Location).indexOf("PKCE") > 0,
+  d6 && decodeURIComponent(d6.response.headers.Location));
+
+/* ---------- 场景 7：error=access_denied（用户自己点了取消） ---------- */
+const r7 = runCase("场景 7：用户取消授权（access_denied）", {
+  argument: "login",
+  request: { url: "https://www.codebuddy.cn/auth/realms/copilot/account/?error=access_denied&state=wb" },
+  token: () => { throw new Error("不该去换令牌"); },
+  api: () => { throw new Error("不该打签到接口"); }
+});
+ok("文案告诉用户是自己取消了", /取消|拒绝/.test(r7.notified[0].b), r7.notified[0].b);
+const d7 = r7.doneArgs.filter((a) => a && a.response).pop();
+ok("仍然 302 回登录页", !!d7 && d7.response.status === 302, d7);
+
+/* ---------- 场景 8：既没 code 也没 error（例如手滑访问了一条怪地址） ---------- */
+const r8 = runCase("场景 8：回调地址里既没有 code 也没有 error", {
+  argument: "login",
+  request: { url: "https://www.codebuddy.cn/auth/realms/copilot/account/" },
+  token: () => { throw new Error("不该去换令牌"); },
+  api: () => { throw new Error("不该打签到接口"); }
+});
+ok("通知说明没抓到 code、也没放给网关", /没有 code/.test(r8.notified[0].b), r8.notified[0].b);
+const d8 = r8.doneArgs.filter((a) => a && a.response).pop();
+ok("回 302 回登录页", !!d8 && d8.response.status === 302 && /wb-login\?err=/.test(d8.response.headers.Location), d8);
+
 console.log(fails ? "\n✗ " + fails + " 个断言失败" : "\n✓ 全部断言通过");
 process.exit(fails ? 1 : 0);

@@ -1063,18 +1063,51 @@ function servePage() {
   });
 }
 
+// Keycloak 回调里的 error 值 → 一句人话。
+// 为什么非要做这一步：回调地址（redirect_uri）是
+//   https://www.codebuddy.cn/auth/realms/copilot/account/
+// codebuddy 的网关（APISIX）对 /account/** 这一整段做了来源限制，非白名单 IP 直接回
+//   403 {"message":"Your IP address is not allowed"}
+// （实测：同一个域名下 /protocol/openid-connect/auth 200、/login-actions/authenticate 400、
+//   /protocol/openid-connect/token 400 invalid_grant，只有 /account/** 是 403）。
+// 所以这条回调请求**必须**由本脚本在手机本地伪造响应，一旦漏给上面那个网关，
+// 用户看到的就是那段看不懂的 JSON —— 包括「带 ?error= 但没有 code=」的回调。
+function explainKc(err, desc) {
+  var d = trunc(desc || "", 160);
+  var tail = d ? "（" + d + "）" : "";
+  if (err === "access_denied") return "你在 CodeBuddy 的登录页上点了取消 / 拒绝了授权。" + tail;
+  if (err === "invalid_request" && /code_challenge|code_challenge_method/i.test(d))
+    return "这次授权请求的 PKCE 参数不全：登录页里「PKCE」保持「关闭」（默认值）再试一次。" + tail;
+  if (err === "login_required" || err === "interaction_required") return "服务端要求重新登录一次。" + tail;
+  if (err === "unauthorized_client" || err === "invalid_client")
+    return "这个 client_id 不被接受：登录页「高级」里把 client_id 换成 account（备用）再试。" + tail;
+  if (err === "invalid_scope") return "scope 被拒（登录页带的是 openid profile offline_access email）。" + tail;
+  if (err === "temporarily_unavailable" || err === "server_error") return "登录服务暂时不可用，过一会儿重试。" + tail;
+  return "授权没有完成" + tail;
+}
+
 function loginCallback() {
   var url = ($request && $request.url) || "";
   var clientId = store("WorkBuddy_LoginClient", "account-console");
-  var m = String(url).match(/[?&]code=([^&#]+)/);
-  var codeStr = m ? decodeURIComponent(m[1]) : "";
-  log("⇢ 登录回调：client=" + clientId + "，code 长度=" + codeStr.length);
+  var pick = function (k) {
+    var mm = String(url).match(new RegExp("[?&]" + k + "=([^&#]+)"));
+    return mm ? decodeURIComponent(mm[1]) : "";
+  };
+  var codeStr = pick("code");
+  var errStr = pick("error");
+  log("⇢ 登录回调：client=" + clientId + "，code 长度=" + codeStr.length +
+      (errStr ? "，error=" + errStr : ""));
 
   var bail = function (title, sub, msg) {
     notify(title, sub, msg);
     try { $done(loginAnswer("err", "", msg)); } catch (e) {}
   };
-  if (!codeStr) return bail("WorkBuddy 登录", "没抓到 code", "回调地址里没有 code：" + trunc(url, 200));
+  if (errStr) {
+    return bail("WorkBuddy 登录没走完", "服务端回了 " + errStr,
+      explainKc(errStr, pick("error_description")) +
+      "\n\n（这条回调本身没被 Loon 拦下也无所谓，脚本已经拦住了。重新点一次登录即可。）");
+  }
+  if (!codeStr) return bail("WorkBuddy 登录", "没抓到 code", "回调地址里既没有 code 也没有 error：" + trunc(url, 200));
 
   var body = { grant_type: "authorization_code", client_id: clientId, code: codeStr, redirect_uri: KC_REDIRECT };
   var verifier = store("WorkBuddy_LoginVerifier", "");

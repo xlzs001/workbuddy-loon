@@ -81,6 +81,17 @@ https://www.codebuddy.cn/wb-login
 横幅上的「打开 BoxJS 看看」直接跳 BoxJS，「再登录一个账号」等于把这一页重开（方便连登多个号）。
 同时 Loon 与 BoxJS 各会收到一条通知；**旧版插件不会有这个回跳**，那时看通知或按第 6 节排错。
 
+> **为什么回调非要 Loon 拦不可**：回调地址落在 `https://www.codebuddy.cn/auth/realms/copilot/account/`，
+> 而 codebuddy 的网关（APISIX）对这一整段 `/account/**` 做了来源限制，非白名单 IP 直接回
+> `403 {"message":"Your IP address is not allowed"}`。同一域名下别的路径都正常（实测
+> `/protocol/openid-connect/auth` 200、`/login-actions/authenticate` 400、`/protocol/openid-connect/token`
+> 400 `invalid_grant`，只有 `/account/**` 是 403，连 `/account/logo.png` 都是）。
+> 所以这条请求一旦漏给线上，用户看到的就是那段看不懂的 JSON —— 插件现在把**整段 `/account/` 前缀**
+> 都拦下（不只是带 `code=` 的那种），成功与失败（`?error=…`）都会跳回登录页把原因说清楚。
+>
+> 万一还是看到了那段 JSON：**地址栏里的 URL 依然带着 `code=`**，把它整段复制到第 ② 步照样能换到令牌
+> （`code` 只有约 1 分钟有效期）。
+
 两条路径（横幅出现 = 第一条通了）：
 
 - **装了插件的 MITM（推荐）**：Loon 在回调那一跳里把 `code` 换成令牌、验证可用、写进 BoxJS 账号池，
@@ -325,6 +336,7 @@ cron 的 `timeout` 同步提到 960。
 | 通知 `AUTH_ERROR / 令牌已失效（HTTP 401）` | 令牌过期或凭据与账号不匹配（等同密码错误）→ 去手机登录页重登一次（或重跑 `accounts-slim.py` / `export-token.py`） |
 | 通知 `AUTH_REJECTED / HTTP 403 权限被拒绝` | 令牌本身有效但服务端拒绝：账号未开通 / 被风控 / 企业账号权限不足，先确认账号状态 |
 | 以后所有请求都 401 | 桌面端退出登录过、或换了账号，重新登录/导出即可 |
+| 登录后浏览器只显示 `{"message":"Your IP address is not allowed"}` | 这是 codebuddy 网关对 `/account/**` 的来源限制，说明**这次回调没被 Loon 拦到**（插件没更新 / MITM 关着 / 规则被删）：更新插件，确认有 `WorkBuddy手机登录` 这条且 `[MITM]` hostname 含 `www.codebuddy.cn`。救急：地址栏那条 URL 仍带 `code=`，整段复制到登录页第 ② 步照样能换令牌（1 分钟内） |
 | 手机登录后没有通知、也没回跳登录页 | ① 确认插件里有 `WorkBuddy手机登录` 这条规则（插件要**更新一次**）、`[MITM]` 的 hostname 含 `www.codebuddy.cn`、且 Loon 的 MITM 开关和证书都正常；② 没走 Loon 就用登录页第 ② 步的「粘贴回调 URL」那条路；③ `code` 只有约 1 分钟有效期，超时重登 |
 | 登录换令牌报 `invalid_grant: Code not valid` | 那个 `code` 已经用过或超过约 1 分钟：重新点一次登录，回调 URL 要当场粘贴 |
 | 登录报 `unauthorized_client` | `WorkBuddy_LoginClient` 被改成了机密客户端（如 `console`）→ 填回 `account-console` |

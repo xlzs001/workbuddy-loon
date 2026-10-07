@@ -11,9 +11,10 @@
 # 1. 下面所有地址已指向 https://github.com/xlzs001/workbuddy-loon（想换仓库就整段替换）。
 # 2. 拿令牌，三条路任选：
 #    · 手机登录（最省事，不用碰电脑）：浏览器打开
-#      https://xlzs001.github.io/workbuddy-loon/login.html
+#      https://www.codebuddy.cn/wb-login （这一页由本插件直接吐出，只要 Loon 通就能开）
 #      用手机号登录一次，令牌会自动写进 BoxJS 的「账号池」；这种令牌还能
 #      被脚本自己续期，以后基本不用管。也可以在 BoxJS 的应用页点「手机登录」。
+#      备选地址（万一上面那条打不开，比如插件没更新）：https://xlzs001.github.io/workbuddy-loon/login.html
 #    · 多账号（推荐）：python3 accounts-slim.py wb-switch-accounts-*.json
 #      把输出粘进 BoxJS 的「账号池」；也可以把 JSON 托管到自己的 URL 填进
 #      WorkBuddy_AccountsURL，之后每轮自动拉取 + 缓存。
@@ -40,7 +41,11 @@ http-request ^https?:\/\/www\.codebuddy\.cn\/wb-login script-path=https://raw.gi
 #    https://www.codebuddy.cn/auth/realms/copilot/account/?...&code=xxxx
 #    时由脚本在手机本地把 code 换成令牌（公开客户端 account-console），验证可用后
 #    写入 BoxJS 账号池，并弹一条通知。code 只能用一次且约 1 分钟过期。
-http-request ^https?:\/\/www\.codebuddy\.cn\/auth\/realms\/copilot\/account\/\?.*code= script-path=https://raw.githubusercontent.com/xlzs001/workbuddy-loon/main/workbuddy.js, requires-body=false, tag=WorkBuddy手机登录, timeout=30, argument=login
+#    ⚠ 这条规则必须覆盖整个 /account/ 前缀（不只是带 code= 的那种）：codebuddy 的网关
+#      对 /account/** 做了来源限制，非白名单 IP 会直接回
+#      403 {"message":"Your IP address is not allowed"}。带 ?error=... 但没有 code= 的
+#      失败回调如果不拦，手机上就会看到那段看不懂的 JSON。
+http-request ^https?:\/\/www\.codebuddy\.cn\/auth\/realms\/copilot\/account\/ script-path=https://raw.githubusercontent.com/xlzs001/workbuddy-loon/main/workbuddy.js, requires-body=false, tag=WorkBuddy手机登录, timeout=30, argument=login
 
 # ② 令牌保鲜：手机端只要有带 Authorization 的请求打到 copilot.tencent.com，
 #    就自动把最新令牌写回 BoxJS，避免手动反复导出。
