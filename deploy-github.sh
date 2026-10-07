@@ -17,6 +17,14 @@ cd "$(dirname "$0")"
 
 step() { printf '\n\033[1m→ %s\033[0m\n' "$1"; }
 
+step "0/5 检查登录页内联是否最新"
+# login.html 改了却忘记跑 build-page.py，线上发出去的就是旧页面 —— 直接中止
+if command -v python3 >/dev/null && [ -f build-page.py ]; then
+  python3 build-page.py --check || { echo "  登录页内联过时：先在项目目录跑 python3 build-page.py"; exit 1; }
+else
+  echo "  跳过（没找到 python3 或 build-page.py）"
+fi
+
 step "1/5 检查待推送内容里没有真实凭据"
 ACCT="$(ls ../wb-switch-accounts-*.json ./accounts.json 2>/dev/null | head -1 || true)"
 if [ -n "${ACCT:-}" ] && command -v python3 >/dev/null; then

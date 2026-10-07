@@ -259,7 +259,7 @@ const r9 = runCase("场景 9：令牌失效（401，等同密码错误）", {
   scenario: () => [401, { code: 401, msg: "unauthorized" }]
 });
 ok("结果是 AUTH_ERROR", r9.last && r9.last.result === "AUTH_ERROR", r9.last && r9.last.result);
-ok("正文点明令牌失效并把手机登录页给出来", /令牌已失效（HTTP 401）/.test(r9.last && r9.last.report) && /login\.html/.test(r9.last.report), r9.last && r9.last.report);
+ok("正文点明令牌失效并把手机登录页给出来", /令牌已失效（HTTP 401）/.test(r9.last && r9.last.report) && /wb-login/.test(r9.last.report), r9.last && r9.last.report);
 ok("通知副标题把状态翻译成动作", /AUTH_ERROR：令牌失效，去手机登录页重登/.test(JSON.stringify(r9.notified)), r9.notified.map((n) => n.s));
 
 /* ---------- 场景 10：403 权限被拒绝 → AUTH_REJECTED（与令牌失效区分开） ---------- */
@@ -300,7 +300,7 @@ const r12 = runCase("场景 12：令牌全部过期", {
 });
 ok("结果是 AUTH_ERROR 而不是 NO_AUTH", r12.last && r12.last.result === "AUTH_ERROR", r12.last && r12.last.result);
 ok("通知标题说明账号已失效", /账号已失效/.test(JSON.stringify(r12.notified)), r12.notified.map((n) => n.t));
-ok("正文要求重新登录并给出登录页", /重新登录/.test(r12.last && r12.last.report) && /login\.html/.test(r12.last.report), r12.last && r12.last.report);
+ok("正文要求重新登录并给出登录页", /重新登录/.test(r12.last && r12.last.report) && /wb-login/.test(r12.last.report), r12.last && r12.last.report);
 
 console.log("\n" + (fails ? "✗ " + fails + " 个断言失败" : "✓ 全部断言通过"));
 process.exit(fails ? 1 : 0);

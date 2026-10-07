@@ -36,7 +36,8 @@ hr{border:0;border-top:1px solid var(--line);margin:14px 0}
 <body>
 
 <h1>WorkBuddy 手机登录</h1>
-<p class="dim">在这个页面里用手机号登录 CodeBuddy，直接拿到签到要用的令牌，不用再回电脑导出。</p>
+<p class="dim">在这个页面里用手机号登录 CodeBuddy，直接拿到签到要用的令牌，不用再回电脑导出。
+  <br><span id="src"></span></p>
 
 <!-- 回调结果横幅：Loon 换完令牌后带着 ?ok / ?warn / ?err 跳回来，就显示在这里 -->
 <div id="banner"></div>
@@ -121,7 +122,7 @@ hr{border:0;border-top:1px solid var(--line);margin:14px 0}
     <li>令牌换回来之后，本页把它整理成 BoxJS 账号池的格式（含 <code>refresh_token</code>），方便你一键复制。</li>
     <li>令牌只能由签发它的客户端续期。<code>account-console</code> 是公开客户端，所以这页换出来的令牌 <b>以后能自己续期</b>；电脑版导出的旧令牌（client <code>console</code>）不行，过期只能重登。</li>
   </ol>
-  <p class="dim">令牌是本机数据，只保存在你的浏览器里（refresh_token 存在 localStorage），不会被上传到任何地方。</p>
+  <p class="dim">令牌是本机数据，只保存在你的浏览器里，不会被上传到任何地方。Pages 上会记住（localStorage）；如果是 <code>www.codebuddy.cn/wb-login</code> 这个由 Loon 直接提供的地址，为了不同源暴露，令牌只留在内存里（关掉页面即消失，要复用就复制走）。</p>
   <hr>
   <p class="dim">不想用这一页？也可以直接在手机浏览器登录官方页面：<a href="https://www.codebuddy.cn/" target="_blank" rel="noreferrer" style="color:var(--acc)">www.codebuddy.cn</a>（但官方登录的令牌换不到手，还需要配合 Loon 抓包）。</p>
 </div>
@@ -135,10 +136,17 @@ var REDIRECT = ISSUER + "/account/";
 var SCOPE    = "openid profile offline_access email";
 var API_BASE = "https://copilot.tencent.com";
 
+/* 这一页有两种来源：
+     ① 由 Loon 直接提供 → https://www.codebuddy.cn/wb-login（与 codebuddy 官网同源）
+     ② GitHub Pages → https://xlzs001.github.io/workbuddy-loon/login.html
+   同源的情况下把 refresh_token 落进 localStorage，等于让该站点的其它脚本也能读到，
+   所以第 ① 种只在内存里留一份（关掉页面就没了，需要就复制走）。 */
+var PERSIST = location.hostname.indexOf("codebuddy.cn") < 0;
+var MEM = {};
 var LS = {
-  get: function (k) { try { return localStorage.getItem("wb_" + k) || ""; } catch (e) { return ""; } },
-  set: function (k, v) { try { localStorage.setItem("wb_" + k, v); } catch (e) {} },
-  del: function (k) { try { localStorage.removeItem("wb_" + k); } catch (e) {} }
+  get: function (k) { try { return (PERSIST ? localStorage.getItem("wb_" + k) : MEM[k]) || ""; } catch (e) { return MEM[k] || ""; } },
+  set: function (k, v) { MEM[k] = v; if (!PERSIST) return; try { localStorage.setItem("wb_" + k, v); } catch (e) {} },
+  del: function (k) { delete MEM[k]; if (!PERSIST) return; try { localStorage.removeItem("wb_" + k); } catch (e) {} }
 };
 function $(id) { return document.getElementById(id); }
 function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) {
@@ -375,6 +383,13 @@ function banner() {
 function goAgain() { location.href = location.pathname; }
 
 /* 首次渲染 */
+(function srcNote() {
+  var el = $("src");
+  if (!el) return;
+  el.innerHTML = PERSIST
+    ? "（这一页来自 GitHub Pages，令牌会记在浏览器里）"
+    : "（这一页由 Loon 直接在 <code>www.codebuddy.cn/wb-login</code> 上提供，令牌只留在内存里）";
+})();
 banner();
 renderSession();
 window.addEventListener("paste", function () {

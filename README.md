@@ -26,21 +26,24 @@ Loon 定时触发、BoxJS 存令牌看结果，不用开着电脑。
 
 | 文件 | 作用 |
 |---|---|
-| `workbuddy.js` | 主脚本，Loon / Surge / QuantumultX 通用。一个文件四种身份：整轮签到、抓令牌保鲜、卡片面板、**登录回调换令牌** |
-| `login.html` | **手机登录页**（纯静态，手机浏览器直接开）：登录一次即可拿令牌并写进 BoxJS 账号池 |
-| `WorkBuddy.plugin` | Loon 插件（两条 cron + MITM 抓令牌 + 可选 Panel） |
+| `workbuddy.js` | 主脚本，Loon / Surge / QuantumultX 通用。一个文件五种身份：整轮签到、抓令牌保鲜、卡片面板、**登录回调换令牌**、**直接吐出登录页 HTML** |
+| `login.html` | **手机登录页**源码（纯静态）：登录一次即可拿令牌并写进 BoxJS 账号池 |
+| `build-page.py` | 把 `login.html` 内联进 `workbuddy.js` 的 `PAGE_HTML`（改完页面务必跑一次；`--check` 只检查） |
+| `WorkBuddy.plugin` | Loon 插件（登录页 + 登录回调 + 两条 cron + MITM 抓令牌 + 可选 Panel） |
 | `boxjs.json` | BoxJS 订阅，提供配置面板与 14 个存储键（含账号池），应用页上有「📱 手机登录」按钮 |
 | `accounts-slim.py` | **多账号**：把切号工具导出的账号 JSON 压成一行、直接粘进 BoxJS |
 | `export-token.py` | **单账号**：在电脑上导出令牌，复用 signin.py 自己的探测/解密逻辑 |
 | `deploy-github.sh` | 一键部署：凭据对照扫描 → 建仓库 → 推送 → 验证 raw 地址 |
 | `tests/workbuddy-multi.test.js` | Node mock 测试（假令牌、不联网），多账号/账号池 URL/兑换兜底/401·403/临期等 12 个场景 |
 | `tests/workbuddy-login.test.js` | Node mock 测试：手机登录换令牌、自动续期、续期失败等 5 个场景 |
+| `tests/workbuddy-page.test.js` | Node mock 测试：登录页内联是否与 `login.html` 字节级一致、回的是不是 200 + text/html |
 
 跑测试（需要 Node，与 Loon 无关；两个文件都应全绿）：
 
 ```bash
 node tests/workbuddy-multi.test.js    # 12 个场景，✓ 全部断言通过
 node tests/workbuddy-login.test.js    # 5 个场景，✓ 全部断言通过
+node tests/workbuddy-page.test.js     # 登录页内联，✓ 全部断言通过
 ```
 
 ## 2. 部署三步
@@ -51,13 +54,20 @@ node tests/workbuddy-login.test.js    # 5 个场景，✓ 全部断言通过
 
 #### C. 手机登录（推荐，不用电脑）
 
-手机浏览器打开：
+手机浏览器打开（或直接点 BoxJS → 应用 → WorkBuddy 自动签到 → 页面上的「📱 手机登录 / 续期」按钮）：
 
 ```
-https://xlzs001.github.io/workbuddy-loon/login.html
+https://www.codebuddy.cn/wb-login
 ```
 
-（或 BoxJS → 应用 → WorkBuddy 自动签到 → 页面上的「📱 手机登录 / 续期」按钮。）
+**这个地址不是 codebuddy 的页面，而是本插件用脚本直接吐出来的那一页**：插件的
+`WorkBuddy登录页` 规则匹配这个路径，脚本回一个 `200 text/html` 的假响应。这样做是因为
+`github.io` / `cdn.jsdelivr.net` 在部分网络下根本打不开，而 `www.codebuddy.cn` 本来就要
+走本插件的 MITM（登录回调也要），所以**只要 Loon 通，这一页就一定打得开**。
+
+> 备用地址（需能访问 GitHub Pages）：`https://xlzs001.github.io/workbuddy-loon/login.html`
+> —— 同一份 `login.html`，功能完全一样，只是在那一页上令牌会记进 localStorage；
+> 而 `wb-login` 那个地址与 codebuddy 官网同源，为了不给同源脚本留把柄，令牌只留在内存里。
 
 点「用手机号登录」→ 走 CodeBuddy 官方登录页（手机号 + 验证码）→ 登录完成后，
 **装了插件的话浏览器会自动跳回登录页，并在页面顶部显示结果横幅**：

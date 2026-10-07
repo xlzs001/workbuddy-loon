@@ -92,7 +92,7 @@ const d1 = r1.doneArgs.filter((a) => a && a.response).pop();
 ok("回了一个 302 让浏览器跳回登录页（所以手机上一定能看到结果）",
   !!d1 && d1.response.status === 302, r1.doneArgs);
 ok("跳回地址带 ok=1 和昵称",
-  !!d1 && /login\.html\?ok=1&name=/.test(d1.response.headers.Location) &&
+  !!d1 && /wb-login\?ok=1&name=/.test(d1.response.headers.Location) &&
   d1.response.headers.Location.indexOf(encodeURIComponent("手机号账号")) > 0,
   d1 && d1.response.headers.Location);
 
@@ -109,7 +109,7 @@ ok("正文带上服务端原因并提示重登",
   /Code not valid/.test(r2.notified[0].b) && /重新登/.test(r2.notified[0].b), r2.notified[0].b);
 const d2 = r2.doneArgs.filter((a) => a && a.response).pop();
 ok("失败也跳回登录页并把原因带在 err 里（用户能看到为什么）",
-  !!d2 && d2.response.status === 302 && /login\.html\?err=/.test(d2.response.headers.Location) &&
+  !!d2 && d2.response.status === 302 && /wb-login\?err=/.test(d2.response.headers.Location) &&
   decodeURIComponent(d2.response.headers.Location).indexOf("Code not valid") > 0,
   d2 && d2.response.headers.Location);
 
@@ -125,7 +125,7 @@ ok("仍然写入账号池（让用户自己决定去留）", pool(r3.store).leng
 ok("通知明确「未验证通过」", /未验证通过/.test(r3.notified[0].t), r3.notified[0].t);
 const d3 = r3.doneArgs.filter((a) => a && a.response).pop();
 ok("未验证通过也跳回登录页（warn 分支）",
-  !!d3 && d3.response.status === 302 && /login\.html\?warn=1/.test(d3.response.headers.Location),
+  !!d3 && d3.response.status === 302 && /wb-login\?warn=1/.test(d3.response.headers.Location),
   d3 && d3.response.headers.Location);
 ok("正文说明这个客户端签发的令牌可能不被接受",
   /签到接口回报 HTTP 401/.test(r3.notified[0].b) && /签发的令牌可能不被接受/.test(r3.notified[0].b), r3.notified[0].b);
@@ -171,7 +171,7 @@ const r5 = runCase("场景 5：续期失败（refresh_token 作废）", {
 ok("结果是有意义的 AUTH_ERROR（不是含糊的 NO_AUTH）", r5.last.result === "AUTH_ERROR", r5.last.result);
 ok("通知标题点明「账号已失效」", /账号已失效/.test(r5.notified[0].t), r5.notified[0].t);
 ok("报告写明续期失败并给出登录页",
-  /自动续期失败/.test(r5.last.report) && /login\.html/.test(r5.last.report), r5.last.report);
+  /自动续期失败/.test(r5.last.report) && /wb-login/.test(r5.last.report), r5.last.report);
 ok("没有拿废令牌去打签到接口",
   !r5.calls.some((c) => c.url.indexOf("checkin-activity-status") >= 0), r5.calls.map((c) => c.url));
 

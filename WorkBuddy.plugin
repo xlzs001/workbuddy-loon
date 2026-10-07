@@ -31,6 +31,11 @@
 # ─────────────────────────────────────────────────────────────────────────
 
 [Script]
+# ⓪ 手机登录页：打开 https://www.codebuddy.cn/wb-login 时，由脚本直接吐出登录页 HTML。
+#    页面挂在 codebuddy 域名下、走本插件已开启的 MITM，所以不依赖 GitHub Pages / jsDelivr，
+#    手机上只要 Loon 通就一定打得开。（需要 [MITM] 的 hostname 含 www.codebuddy.cn）
+http-request ^https?:\/\/www\.codebuddy\.cn\/wb-login script-path=https://raw.githubusercontent.com/xlzs001/workbuddy-loon/main/workbuddy.js, requires-body=false, tag=WorkBuddy登录页, timeout=10, argument=page
+
 # ① 手机登录回调：在登录页登完，浏览器跳回
 #    https://www.codebuddy.cn/auth/realms/copilot/account/?...&code=xxxx
 #    时由脚本在手机本地把 code 换成令牌（公开客户端 account-console），验证可用后
