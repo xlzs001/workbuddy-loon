@@ -261,5 +261,49 @@ ok("通知里明确要求回登录页重新点一次（而不是让用户去填 
   /PKCE verifier/.test(r11.notified[0].b) && /重新点一次/.test(r11.notified[0].b), r11.notified[0].b);
 ok("没有把没验证的令牌写进账号池", pool(r11.store).length === 0, pool(r11.store));
 
+/* ---------- 场景 12：BoxJS 交棒（不需要 MITM）：粘来的回调地址 → 自动换令牌 ---------- */
+const AT12 = jwt("uid-pickup-12", "手机号账号B", Math.floor((Date.now() + 40 * DAY) / 1000));
+const r12 = runCase("场景 12：BoxJS「登录回调地址」交棒，cron/手动跑时先换令牌", {
+  // 注意：这里没有 argument（＝定时任务或手动运行那种空参调用），也没有 $request
+  store: { WorkBuddy_LoginCallback: "https://www.codebuddy.cn/auth/realms/copilot/account/?state=ab12cd34~VERIFIER-12&session_state=aa&code=code-12" },
+  token: (m, body) => (q(body).code_verifier === "VERIFIER-12" && q(body).code === "code-12"
+    ? { status: 200, data: { access_token: AT12, refresh_token: "RT-12", expires_in: 3600 } }
+    : { status: 400, data: { error: "invalid_grant" } }),
+  api: API_OK
+});
+const t12 = r12.calls.find((c) => c.url.indexOf("openid-connect/token") >= 0);
+ok("没有 $request 也能换令牌（走的正是脚本自己发请求这条路）",
+  !!t12 && q(t12.body).code === "code-12" && q(t12.body).code_verifier === "VERIFIER-12", t12 && t12.body);
+ok("令牌写入账号池", pool(r12.store).length === 1 && pool(r12.store)[0].uid === "uid-pickup-12", pool(r12.store));
+ok("换了令牌就不再顺便跑签到（本轮只做登录，避免半路 $done 打断）",
+  r12.calls.filter((c) => c.url.indexOf("copilot.tencent.com") >= 0).length === 1,
+  r12.calls.map((c) => c.url));
+ok("回调地址字段被清空（不会每一轮都拿它重试）", r12.store["WorkBuddy_LoginCallback"] === "", r12.store["WorkBuddy_LoginCallback"]);
+ok("通知里告诉用户再点一次就能签到", /再点一次/.test(r12.notified[0].b), r12.notified[0].b);
+
+/* ---------- 场景 13：交棒进来的 code 过期/无效 → 清空字段并说清楚 ---------- */
+const r13 = runCase("场景 13：交棒的回调地址换不了令牌（code 过期）", {
+  store: { WorkBuddy_LoginCallback: "https://www.codebuddy.cn/auth/realms/copilot/account/?state=ab~VER-13&code=expired-13" },
+  token: () => ({ status: 400, data: { error: "invalid_grant", error_description: "Code not valid" } }),
+  api: () => { throw new Error("不该打签到接口"); }
+});
+ok("没有写入账号池", pool(r13.store).length === 0, pool(r13.store));
+ok("回调地址字段被清空 + 通知里说明原因",
+  r13.store["WorkBuddy_LoginCallback"] === "" && r13.notified[0].s === "换令牌失败" && /已清掉/.test(r13.notified[0].b),
+  r13.notified[0].s + " / " + r13.notified[0].b);
+ok("没有去碰签到接口", r13.calls.every((c) => c.url.indexOf("copilot.tencent.com") < 0), r13.calls.map((c) => c.url));
+
+/* ---------- 场景 14：那个字段里不是网址 → 忽略它，本轮照常（保护定时任务） ---------- */
+const r14 = runCase("场景 14：「登录回调地址」是垃圾值时不影响正常流程", {
+  argument: "login",
+  store: { WorkBuddy_LoginCallback: "随手打的字" },
+  request: { url: "https://www.codebuddy.cn/auth/realms/copilot/account/?state=ab~VER-14&code=code-14" },
+  token: () => ({ status: 200, data: { access_token: jwt("uid-14", "账号14", Math.floor((Date.now() + 40 * DAY) / 1000)), expires_in: 3600 } }),
+  api: API_OK
+});
+ok("垃圾值没有被当成待换取的地址（仍然按 $request 里的回调走）",
+  r14.calls.some((c) => c.url.indexOf("openid-connect/token") >= 0), r14.calls.map((c) => c.url));
+ok("垃圾值也没有被误清空", r14.store["WorkBuddy_LoginCallback"] !== undefined, r14.store["WorkBuddy_LoginCallback"]);
+
 console.log(fails ? "\n✗ " + fails + " 个断言失败" : "\n✓ 全部断言通过");
 process.exit(fails ? 1 : 0);

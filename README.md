@@ -30,19 +30,19 @@ Loon 定时触发、BoxJS 存令牌看结果，不用开着电脑。
 | `login.html` | **手机登录页**源码（纯静态）：登录一次即可拿令牌并写进 BoxJS 账号池 |
 | `build-page.py` | 把 `login.html` 内联进 `workbuddy.js` 的 `PAGE_HTML`（改完页面务必跑一次；`--check` 只检查） |
 | `WorkBuddy.plugin` | Loon 插件（登录页 + 登录回调 + 两条 cron + MITM 抓令牌 + 可选 Panel） |
-| `boxjs.json` | BoxJS 订阅，提供配置面板与 14 个存储键（含账号池），应用页上有「📱 手机登录」按钮 |
+| `boxjs.json` | BoxJS 订阅，提供配置面板与 15 个存储键（含账号池、登录回调地址），应用页上有「📱 手机登录」按钮 |
 | `accounts-slim.py` | **多账号**：把切号工具导出的账号 JSON 压成一行、直接粘进 BoxJS |
 | `export-token.py` | **单账号**：在电脑上导出令牌，复用 signin.py 自己的探测/解密逻辑 |
 | `deploy-github.sh` | 一键部署：凭据对照扫描 → 建仓库 → 推送 → 验证 raw 地址 |
 | `tests/workbuddy-multi.test.js` | Node mock 测试（假令牌、不联网），多账号/账号池 URL/兑换兜底/401·403/临期等 12 个场景 |
-| `tests/workbuddy-login.test.js` | Node mock 测试：手机登录换令牌、自动续期、续期失败等 5 个场景 |
+| `tests/workbuddy-login.test.js` | Node mock 测试：手机登录换令牌、BoxJS 交棒、自动续期、PKCE、续期失败等 14 个场景 |
 | `tests/workbuddy-page.test.js` | Node mock 测试：登录页内联是否与 `login.html` 字节级一致、回的是不是 200 + text/html |
 
 跑测试（需要 Node，与 Loon 无关；两个文件都应全绿）：
 
 ```bash
 node tests/workbuddy-multi.test.js    # 12 个场景，✓ 全部断言通过
-node tests/workbuddy-login.test.js    # 5 个场景，✓ 全部断言通过
+node tests/workbuddy-login.test.js    # 14 个场景，✓ 全部断言通过
 node tests/workbuddy-page.test.js     # 登录页内联，✓ 全部断言通过
 ```
 
@@ -92,12 +92,20 @@ https://www.codebuddy.cn/wb-login
 > 万一还是看到了那段 JSON：**地址栏里的 URL 依然带着 `code=`**，把它整段复制到第 ② 步照样能换到令牌
 > （`code` 只有约 1 分钟有效期）。
 
-两条路径（横幅出现 = 第一条通了）：
+三条路径（从最省事到最折腾）：
 
-- **装了插件的 MITM（推荐）**：Loon 在回调那一跳里把 `code` 换成令牌、验证可用、写进 BoxJS 账号池，
+- **① BoxJS 交棒（推荐，不需要 MITM、不需要回调被拦下）**：在任一登录页点「用手机号登录」→ 输手机号 + 验证码 → 点登录。
+  登录完**页面停在哪儿都无所谓**（可能是一段 `{"message":"Your IP address is not allowed"}`，也可能一直转圈），
+  只要**地址栏那条 URL 里带着 `code=`**：整段复制 → 回到 BoxJS → WorkBuddy 应用 → 「**登录回调地址**」→ 粘贴 → 点右下角蓝色按钮保存 →
+  再点「**立即签到一轮（手动运行）**」。脚本会在手机本地把 `code` 换成令牌、验证能不能签到、写进账号池，并弹通知告诉你结果。
+  这条路不需要 Loon 拦回调（换令牌是脚本自己发出去的请求，与浏览器跨域无关），换完（或失败）那个字段会被自动清空。
+  `code` 只有约 **1 分钟**有效期，粘完马上点。
+- **② 装了插件的 MITM（全自动）**：Loon 在回调那一跳里把 `code` 换成令牌、验证可用、写进 BoxJS 账号池，
   再回一个 `302` 把浏览器送回登录页 —— 所以**成功、失败都看得见**。PKCE 不用管：`account-console` 这个客户端在服务端**强制 PKCE(S256)**（不带 `code_challenge_method` 会直接被 Keycloak 打回 `invalid_request`），登录页因此始终带着 PKCE，并把 verifier 编进 `state`，Loon 从回调 URL 里就能取到 —— 不用往 BoxJS 里填 `WorkBuddy_LoginVerifier`。
-- **纯浏览器（不用 Loon）**：登录完复制地址栏那一整条 URL，粘回登录页第 ② 步 → 页面里换出令牌 →
-  复制生成的账号池 JSON → 粘进 BoxJS 的「账号池」。这一页同样带 PKCE，verifier 从 URL 的 `state` 里取（`<随机>~<verifier>`），所以本机没记住也能换到令牌。
+- **③ 在页面上直接换令牌（只有 Loon 吐出来的那份 `wb-login` 才行）**：实测 `account-console` 的令牌接口
+  **不给跨域许可**（预检 `OPTIONS` 带 `access-control-allow-origin`，但真正的 `POST` 响应**没有**这个头），
+  所以从 `github.io` 那份 Pages 页面上点「换取令牌」会被浏览器拦下（`Load failed` / `Failed to fetch`）——
+  这不是地址的问题，换令牌请走 ① 或 ②。`wb-login` 那一页与 codebuddy 同源，点「换取令牌」可以直接换。
 
 这样拿到的令牌带 `refresh_token`，**脚本每轮会自己续期**，基本一次登录管很久。
 
@@ -336,10 +344,11 @@ cron 的 `timeout` 同步提到 960。
 | 通知 `AUTH_ERROR / 令牌已失效（HTTP 401）` | 令牌过期或凭据与账号不匹配（等同密码错误）→ 去手机登录页重登一次（或重跑 `accounts-slim.py` / `export-token.py`） |
 | 通知 `AUTH_REJECTED / HTTP 403 权限被拒绝` | 令牌本身有效但服务端拒绝：账号未开通 / 被风控 / 企业账号权限不足，先确认账号状态 |
 | 以后所有请求都 401 | 桌面端退出登录过、或换了账号，重新登录/导出即可 |
-| 登录后浏览器只显示 `{"message":"Your IP address is not allowed"}` | 这是 codebuddy 网关对 `/account/**` 的来源限制，说明**这次回调没被 Loon 拦到**（插件没更新 / MITM 关着 / 规则被删）：更新插件，确认有 `WorkBuddy手机登录` 这条且 `[MITM]` hostname 含 `www.codebuddy.cn`。救急：地址栏那条 URL 仍带 `code=`，整段复制到登录页第 ② 步照样能换令牌（1 分钟内） |
-| 手机登录后没有通知、也没回跳登录页 | ① 确认插件里有 `WorkBuddy手机登录` 这条规则（插件要**更新一次**）、`[MITM]` 的 hostname 含 `www.codebuddy.cn`、且 Loon 的 MITM 开关和证书都正常；② 没走 Loon 就用登录页第 ② 步的「粘贴回调 URL」那条路；③ `code` 只有约 1 分钟有效期，超时重登 |
+| 登录后浏览器只显示 `{"message":"Your IP address is not allowed"}` | 这是 codebuddy 网关对 `/account/**` 的来源限制，说明**这次回调没被 Loon 拦到**（插件没更新 / MITM 关着 / 规则被删）：更新插件，确认有 `WorkBuddy手机登录` 这条且 `[MITM]` hostname 含 `www.codebuddy.cn`。救急：地址栏那条 URL 仍带 `code=`，整段复制到 BoxJS 的「登录回调地址」再点「立即签到一轮」，照样能换到令牌（1 分钟内） |
+| 手机登录后没有通知、也没回跳登录页 | ① 确认插件里有 `WorkBuddy手机登录` 这条规则（插件要**更新一次**）、`[MITM]` 的 hostname 含 `www.codebuddy.cn`、且 Loon 的 MITM 开关和证书都正常；② 没走 Loon 就把回调 URL 粘进 BoxJS 的「登录回调地址」，再点「立即签到一轮（手动运行）」（不需要 MITM）；③ `code` 只有约 1 分钟有效期，超时重登 |
 | 登录换令牌报 `invalid_grant: Code not valid` | 那个 `code` 已经用过或超过约 1 分钟：重新点一次登录，回调 URL 要当场粘贴 |
 | 登录报 `unauthorized_client` | `WorkBuddy_LoginClient` 被改成了机密客户端（如 `console`）→ 填回 `account-console` |
+| 在 Pages 登录页上点「换取令牌」报 `Load failed` / `Failed to fetch` | 浏览器跨域被拦：CodeBuddy 的令牌接口**不给跨域许可**（预检 `OPTIONS` 有 `access-control-allow-origin`，真正的 `POST` 响应没有）—— 不是地址的问题。改用手机上的 BoxJS：把回调 URL 粘进「**登录回调地址**」→ 保存 → 点「立即签到一轮（手动运行）」，由脚本在手机本地换令牌（不需要 MITM） |
 | 续期报 `Token client and authorized client don't match` | 这条令牌是电脑端导出的，续不了；用手机登录页重登一次，让它带 `client` 字段 |
 | 只有一部分账号跑到了 | 看通知末尾的 `已跳过（原因）`：过期 / 缺 uid / 重复都会被点名；`总预算耗尽，本轮跳过` 则调大 `WorkBuddy_Budget` |
 | 配了账号池 URL 却报拉取失败 | 确认地址能从手机直接访问（HTTPS、无鉴权页）；失败时会自动用本地缓存，报告里会注明 |

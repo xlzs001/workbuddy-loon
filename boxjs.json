@@ -19,7 +19,7 @@
       "script_timeout": 300,
       "scripts": [
         {
-          "name": "立即签到一轮（手动运行）",
+          "name": "立即签到一轮（手动运行；粘了「登录回调地址」时会先换令牌）",
           "script": "https://raw.githubusercontent.com/xlzs001/workbuddy-loon/main/workbuddy.js",
           "script_timeout": 300
         },
@@ -33,6 +33,7 @@
         "WorkBuddy_Accounts",
         "WorkBuddy_AccountsURL",
         "WorkBuddy_LoginVerifier",
+        "WorkBuddy_LoginCallback",
         "WorkBuddy_LoginClient",
         "WorkBuddy_Budget",
         "WorkBuddy_Token",
@@ -75,6 +76,15 @@
           "val": "",
           "type": "text",
           "desc": "登录页已把 PKCE verifier 编进回调 URL 的 state（<随机>~<verifier>），Loon 回调那一步会自动取出来，所以这里留空就行。只有当你自己手搓授权链接、state 里没带 verifier 时才需要手填。注意：account-console 在服务端强制 PKCE(S256)，完全不带 PKCE 的授权请求会被打回 invalid_request。"
+        },
+        {
+          "id": "WorkBuddy_LoginCallback",
+          "name": "登录回调地址（手机登录换令牌用，粘一次就清掉）",
+          "val": "",
+          "type": "textarea",
+          "autoGrow": true,
+          "rows": 4,
+          "desc": "不需要 MITM 的登录方式：在登录页点「用手机号登录 CodeBuddy」→ 输手机号 + 验证码 → 点登录，浏览器会停在一条 https://www.codebuddy.cn/auth/realms/copilot/account/?...&code=... 的地址上（屏幕上可能只有一段报错 JSON，不影响）。把地址栏那条 URL 整段复制粘到这里 → 保存 → 再点下面的「立即签到一轮（手动运行）」，脚本会在手机本地把 code 换成令牌并写进账号池，同时通知你结果。code 只有约 1 分钟有效期，粘完马上点。换完（或失败）这里会被自动清空。"
         },
         {
           "id": "WorkBuddy_Budget",
@@ -147,7 +157,7 @@
           "desc": "默认只在真领到东西或出错时通知，避免「已签过 / Buddy 还在路上」刷屏。"
         }
       ],
-      "desc_html": "<div style=\"padding:8px 0\"><a href=\"https://www.codebuddy.cn/wb-login\" target=\"_blank\" style=\"display:inline-block;padding:10px 18px;border-radius:22px;text-decoration:none;font-weight:600;margin:0 8px 8px 0;background:#2b7fff;color:#fff\">📱 手机登录（走 Loon）</a><a href=\"https://xlzs001.github.io/workbuddy-loon/login.html\" target=\"_blank\" style=\"display:inline-block;padding:10px 18px;border-radius:22px;text-decoration:none;font-weight:600;margin:0 8px 8px 0;background:#3a3f4b;color:#fff\">🧭 备用登录页（不用 Loon）</a><p style=\"margin:10px 0 0;font-size:13px;line-height:1.7;color:#888\">两个地址打开的是<b>同一页</b>。第一个由 Loon 直接吐出来（需要插件已更新 + MITM 开关打开 + CA 证书被信任），打不开、显示 <code>{\"error_msg\":\"404 Route Not Found\"}</code> 就说明 MITM 没生效，直接用第二个。<br>登录完如果页面只显示一段 <code>{\"message\":\"Your IP address is not allowed\"}</code>：没关系 —— <b>地址栏那条 URL 里仍然带着 code=</b>，整段复制，回到登录页第 ② 步粘贴点「换取令牌」即可（code 只有约 1 分钟）。<br>登录成功得到的账号池 JSON，粘进下面「账号池」并点右下角蓝色按钮保存。</p></div>"
+      "desc_html": "<div style=\"padding:8px 0\"><a href=\"https://www.codebuddy.cn/wb-login\" target=\"_blank\" style=\"display:inline-block;padding:10px 18px;border-radius:22px;text-decoration:none;font-weight:600;margin:0 8px 8px 0;background:#2b7fff;color:#fff\">📱 手机登录（走 Loon）</a><a href=\"https://xlzs001.github.io/workbuddy-loon/login.html\" target=\"_blank\" style=\"display:inline-block;padding:10px 18px;border-radius:22px;text-decoration:none;font-weight:600;margin:0 8px 8px 0;background:#3a3f4b;color:#fff\">🧭 备用登录页（不用 Loon）</a><p style=\"margin:10px 0 0;font-size:13px;line-height:1.7;color:#888\"><b>最省事的登录方式（不需要 MITM）</b>：打开任一地址 → 点「用手机号登录 CodeBuddy」→ 输手机号 + 验证码 → 登录。<b>登录完不用管页面停在哪儿</b>（可能是一段 <code>{\"message\":\"Your IP address is not allowed\"}</code> 或 <code>{\"error_msg\":\"404 Route Not Found\"}</code>，都不影响），只要地址栏那条 URL 里带着 <code>code=</code>：把它整段复制，粘进下面的「<b>登录回调地址</b>」并保存，再点下面「<b>立即签到一轮（手动运行）</b>」，脚本会在手机本地把 code 换成令牌写进账号池，之后自动续期。<br>第一个地址由 Loon 直接吐出来（需要插件已更新 + MITM 开关打开 + CA 证书被信任），打不开或显示 404 就说明 MITM 没生效，用第二个即可 —— 手机浏览器打不开 github.io 时反过来用第一个。</p></div>"
     }
   ]
 }

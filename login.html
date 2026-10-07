@@ -78,6 +78,7 @@ hr{border:0;border-top:1px solid var(--line);margin:14px 0}
     <button class="btn" id="ex">换取令牌</button>
   </div>
   <div id="exOut"></div>
+  <p class="dim"><b>在这一页换不了？</b>普通浏览器里 CodeBuddy 的令牌接口不带跨域许可，浏览器会拦下这次请求（<code>Load failed</code> / <code>Failed to fetch</code>）—— 不是地址的问题。这时改用手机上的 <b>BoxJS</b>：把这条 URL 粘进 WorkBuddy 应用里的「<b>登录回调地址</b>」保存，再点「<b>立即签到一轮（手动运行）</b>」，由脚本在手机本地换令牌并写进账号池（这条路不需要 MITM）。</p>
 </div>
 
 <!-- ③ 结果 -->
@@ -111,6 +112,11 @@ hr{border:0;border-top:1px solid var(--line);margin:14px 0}
     <li>点登录 → 输手机号 + 验证码</li>
     <li>等浏览器跳回本页 → 顶部出现 <b>✅ 登录成功 / ⚠️ 令牌未验证通过 / ❌ 登录没有完成</b> 的横幅（Loon 和 BoxJS 也会各收到一条通知）</li>
   </ol>
+  <p class="dim"><b>不装 Loon 也能全自动（「交棒」模式）</b>：登录完把地址栏那条 URL 整段复制 →
+    手机 <b>BoxJS</b> → WorkBuddy 应用 →「<b>登录回调地址</b>」→ 粘贴 → 保存 →
+    再点「<b>立即签到一轮（手动运行）</b>」。这一步由脚本在手机本地把 <code>code</code> 换成令牌、
+    验证能不能签到、写进账号池，成败都会弹通知（换令牌是脚本自己发出去的请求，不受浏览器跨域限制）。
+    换完那个字段会自动清空，之后正常跑就行。</p>
 </div>
 
 <!-- ⑥ 说明 -->
@@ -307,7 +313,15 @@ $("ex").onclick = function () {
     say($("exOut"), "ok", "换到了 ✓");
     showTokens(tok, client);
   }).catch(function (err) {
-    say($("exOut"), "err", esc(explain(err)));
+    var t = String((err && err.message) || err);
+    if (/failed to fetch|load failed|networkerror|network request failed|typeerror/i.test(t)) {
+      say($("exOut"), "warn",
+        "浏览器把这次请求拦住了（跨域）：CodeBuddy 的令牌接口不给别的网站发跨域许可，所以这一页换不了令牌 —— 不是地址的问题。<br>" +
+        "改用手机上的 <b>BoxJS</b>：把上面这条 URL 粘进 WorkBuddy 应用里的「<b>登录回调地址</b>」并保存，" +
+        "再点「立即签到一轮（手动运行）」，由脚本在手机本地把 code 换成令牌（这条路同样不需要 MITM）。");
+    } else {
+      say($("exOut"), "err", esc(explain(err)));
+    }
   });
 };
 

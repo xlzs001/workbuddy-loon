@@ -15,6 +15,9 @@
 #      用手机号登录一次，令牌会自动写进 BoxJS 的「账号池」；这种令牌还能
 #      被脚本自己续期，以后基本不用管。也可以在 BoxJS 的应用页点「手机登录」。
 #      备选地址（万一上面那条打不开，比如插件没更新）：https://xlzs001.github.io/workbuddy-loon/login.html
+#      登录完页面停在哪儿都无所谓（可能是一段 Your IP address is not allowed）——只要**地址栏那条 URL 里带着 code=**：
+#      整段复制 → BoxJS 的 WorkBuddy 应用 →「登录回调地址」→ 粘贴 → 保存 → 点「立即签到一轮（手动运行）」，
+#      脚本会在手机本地把 code 换成令牌写进账号池（这条路不需要 MITM，也不需要回调被拦下）。
 #    · 多账号（推荐）：python3 accounts-slim.py wb-switch-accounts-*.json
 #      把输出粘进 BoxJS 的「账号池」；也可以把 JSON 托管到自己的 URL 填进
 #      WorkBuddy_AccountsURL，之后每轮自动拉取 + 缓存。
