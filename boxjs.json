@@ -147,7 +147,7 @@
           "desc": "默认只在真领到东西或出错时通知，避免「已签过 / Buddy 还在路上」刷屏。"
         }
       ],
-      "desc_html": "<div style=\"padding:8px 0\"><a href=\"https://www.codebuddy.cn/wb-login\" target=\"_blank\" style=\"display:inline-block;padding:10px 18px;background:#2b7fff;color:#fff;border-radius:22px;text-decoration:none;font-weight:600\">📱 手机登录 / 续期（点这里）</a><p style=\"margin:10px 0 0;font-size:13px;line-height:1.6;color:#888\">用手机号登录一次，令牌会自动写进下面的「账号池」，<b>并且能被脚本自己续期</b>，以后不用再回电脑导出。<br>（万一这个地址打不开，用备用地址：https://xlzs001.github.io/workbuddy-loon/login.html）</p></div>"
+      "desc_html": "<div style=\"padding:8px 0\"><a href=\"https://www.codebuddy.cn/wb-login\" target=\"_blank\" style=\"display:inline-block;padding:10px 18px;border-radius:22px;text-decoration:none;font-weight:600;margin:0 8px 8px 0;background:#2b7fff;color:#fff\">📱 手机登录（走 Loon）</a><a href=\"https://xlzs001.github.io/workbuddy-loon/login.html\" target=\"_blank\" style=\"display:inline-block;padding:10px 18px;border-radius:22px;text-decoration:none;font-weight:600;margin:0 8px 8px 0;background:#3a3f4b;color:#fff\">🧭 备用登录页（不用 Loon）</a><p style=\"margin:10px 0 0;font-size:13px;line-height:1.7;color:#888\">两个地址打开的是<b>同一页</b>。第一个由 Loon 直接吐出来（需要插件已更新 + MITM 开关打开 + CA 证书被信任），打不开、显示 <code>{\"error_msg\":\"404 Route Not Found\"}</code> 就说明 MITM 没生效，直接用第二个。<br>登录完如果页面只显示一段 <code>{\"message\":\"Your IP address is not allowed\"}</code>：没关系 —— <b>地址栏那条 URL 里仍然带着 code=</b>，整段复制，回到登录页第 ② 步粘贴点「换取令牌」即可（code 只有约 1 分钟）。<br>登录成功得到的账号池 JSON，粘进下面「账号池」并点右下角蓝色按钮保存。</p></div>"
     }
   ]
 }
