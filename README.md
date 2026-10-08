@@ -28,7 +28,7 @@
 1. 在 Loon 中安装插件：
 
    ```text
-   https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.2.1/WorkBuddy.plugin
+   https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.2.0/WorkBuddy.plugin
    ```
 
 2. 打开并信任 Loon MITM 证书，确认 hostname 包含 `www.codebuddy.cn`。
@@ -52,7 +52,7 @@
 | `WorkBuddy.plugin` | Loon 插件（登录页 + 登录回调 + 两条 cron + MITM 抓令牌 + 可选 Panel） |
 | `boxjs.json` | BoxJS 订阅，提供配置面板与 15 个存储键（含账号池、登录回调地址），应用页上有「📱 手机登录」按钮 |
 | `accounts-slim.py` | **多账号**：把切号工具导出的账号 JSON 压成一行、直接粘进 BoxJS |
-| `export-token.py` | **单账号**：在电脑上导出固定 API 端点所需令牌，复用 signin.py 自己的探测/解密逻辑 |
+| `export-token.py` | **单账号**：在电脑上导出令牌，复用 signin.py 自己的探测/解密逻辑 |
 | `deploy-github.sh` | 一键部署：凭据对照扫描 → 建仓库 → 推送 → 验证 raw 地址 |
 | `tests/workbuddy-multi.test.js` | Node mock 测试（假令牌、不联网），多账号/账号池 URL/兑换兜底/401·403/临期等 12 个场景 |
 | `tests/workbuddy-login.test.js` | Node mock 测试：手机登录换令牌、BoxJS 交棒、自动续期、PKCE、续期失败等 14 个场景 |
@@ -60,7 +60,7 @@
 | `tests/workbuddy-regression.test.js` | 缺陷回归测试：存储兼容性、HTTP 错误、账号池 URL 与 OAuth 事务校验 |
 | `HANDOFF.md` | 维护交接：架构、登录链路、配置键、测试、发布与故障恢复 |
 
-跑测试（需要 Node，与 Loon 无关；四个文件都应全绿）：
+跑测试（需要 Node，与 Loon 无关；两个文件都应全绿）：
 
 ```bash
 node tests/workbuddy-multi.test.js    # 12 个场景，✓ 全部断言通过
@@ -121,7 +121,7 @@ https://www.codebuddy.cn/wb-login
 
 正常情况下只有一条路径：**最新版 Loon 插件 + 自动登录页**。Loon 在回调时自动把 `code` 换成令牌、验证可用性、写入 BoxJS 账号池，再用 `302` 把浏览器送回结果页。PKCE verifier 只保存在 10 分钟有效的一次性事务中，不进入 URL，事务在回调时立即消费。
 
-如果回调规则未命中，返回登录页打开折叠的“故障恢复”入口，粘贴完整 CodeBuddy HTTPS 回调地址。本机 Loon 会验证 state、换取令牌并直接写入 BoxJS；路径支持 `/account` 与 `/account/`。它只是应急方案，不是正常登录步骤。请勿把含 `code` 的完整地址分享给他人。
+如果回调规则未命中，页面底部保留了折叠的“故障恢复”入口：可粘贴完整 CodeBuddy HTTPS 回调地址继续处理。它只是应急方案，不是正常登录步骤。
 
 这样拿到的令牌带 `refresh_token`，**脚本每轮会自己续期**，基本一次登录管很久。
 
@@ -157,10 +157,8 @@ python3 /path/to/export-token.py .        # 输出一行 JSON
 输出示例：
 
 ```json
-{"token":"eyJhb...","uid":"1234567","enterpriseId":"","domain":""}
+{ "token": "eyJhb...", "uid": "1234567", "enterpriseId": "", "domain": "", "endpoint": "https://copilot.tencent.com" }
 ```
-
-主脚本当前固定请求 `https://copilot.tencent.com`；若桌面凭据使用其他 endpoint，本项目不支持直接切换。
 
 这条路径连新版 `$wbEncrypted` 加密凭据都能处理，因为它直接调用 `signin.py` 的
 `find_auth_file()` / `load_session_retry()` / `resolve_session()` / `build_headers()`。
@@ -205,11 +203,11 @@ git remote add origin https://github.com/xlzs001/workbuddy-loon.git
 git branch -M main && git push -u origin main
 ```
 
-修复后先提交并创建不可变版本标签（当前配置为 `v1.2.1`），再推送分支与标签；生产插件不会自动追踪可变的 `main`。
+修复后先提交并创建不可变版本标签（当前配置为 `v1.2.0`），再推送分支与标签；生产插件不会自动追踪可变的 `main`。
 嫌 raw.githubusercontent.com 慢可以用 jsDelivr 包一层（同步有延迟，插件地址不用改）：
 
 ```
-https://cdn.jsdelivr.net/gh/xlzs001/workbuddy-loon@v1.2.1/workbuddy.js
+https://cdn.jsdelivr.net/gh/xlzs001/workbuddy-loon@v1.2.0/workbuddy.js
 ```
 
 > 想换仓库：把 `WorkBuddy.plugin` 与 `boxjs.json` 里全部 `xlzs001/workbuddy-loon` 替换掉即可。
@@ -219,9 +217,9 @@ https://cdn.jsdelivr.net/gh/xlzs001/workbuddy-loon@v1.2.1/workbuddy.js
 1. **安装 BoxJS**（没装过的话）：Loon → 配置 → 插件 → 添加
    `https://raw.githubusercontent.com/chavyleung/scripts/master/box/rewrite/boxjs.rewrite.loon.plugin`
 2. **添加签到插件**：Loon → 配置 → 插件 → 添加 →
-   `https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.2.1/WorkBuddy.plugin` → 打开开关
+   `https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.2.0/WorkBuddy.plugin` → 打开开关
 3. **添加 BoxJS 订阅**：打开 BoxJS 网页/App → 订阅 → 添加
-   `https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.2.1/boxjs.json`
+   `https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.2.0/boxjs.json`
 4. **填令牌**：BoxJS → 应用 → 「WorkBuddy 自动签到」 →
    多账号：粘贴到 **「账号池」**；单账号：填 `accessToken` 与 `uid`
    （`enterpriseId` / `domain` 仅企业账号需要）→ **点右下角蓝色浮动按钮保存**，
@@ -314,7 +312,7 @@ cron 的 `timeout` 同步提到 960。
 ## 5. 保鲜与续期（可选但强烈建议）
 
 打开插件里的 `[MITM]` 后，只要**手机端自身**有请求打到 `copilot.tencent.com`，
-`workbuddy.js` 就会把最新的 `Authorization` / `X-User-Id` 写回 BoxJS，并从 JWT 更新过期时间；能否长期有效仍取决于后续是否持续捕获新令牌或拥有可用的 refresh token。
+`workbuddy.js` 就会把最新的 `Authorization` / `X-User-Id` 写回 BoxJS，令牌永不过期。
 用的是账号池时，它会按 `X-User-Id` **只更新命中那一条**（整段 JSON 写回，保持原格式），
 通知里会说明刷新的是哪个昵称；命中不了才回退到单账号的键。
 

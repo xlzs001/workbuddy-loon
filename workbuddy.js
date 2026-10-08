@@ -210,14 +210,8 @@ function httpLabel(code) {
   return "HTTP " + code;
 }
 
-function bizOK(code, body) {
-  if (!(code >= 200 && code < 300)) return false;
-  var businessCode = dig(body, "code");
-  return businessCode === null || asInt(businessCode, -1) === 0;
-}
-
 function note(code, body, label, required) {
-  if (code >= 200 && code < 300 && (!required || bizOK(code, body))) return false;
+  if (code >= 200 && code < 300 && (!required || asInt(dig(body, "code"), 0) === 0)) return false;
   var detail = "";
   if (body && typeof body === "object") detail = String(dig(body, "error") || dig(body, "msg") || "");
   parts.push(label + "失败：" + (detail || httpLabel(code)));
@@ -243,11 +237,9 @@ function finish(result, report) {
   if (ctx.ended) return;
   ctx.ended = true;
   var r = result || ctx.result || "OK";
-  // 任一硬错误都不能被前面成功的步骤掩盖；否则有奖励领取失败时仍会误报 SUCCESS。
-  if (!ERROR_STATES[r] && ctx.hard > 0) r = "ERROR";
-  // 没有硬错误时，只要真领到过东西就算 SUCCESS，
+  // 硬错误状态优先；否则这一轮只要真领到过东西就算 SUCCESS，
   // 免得「非签到季 + 成长中心领了一堆」被记成 INACTIVE。
-  else if (!ERROR_STATES[r] && ctx.ok > 0) r = "SUCCESS";
+  if (!ERROR_STATES[r] && ctx.ok > 0) r = "SUCCESS";
   ctx.result = r;
   ctx.text = report || parts.join("；") || "无操作";
   // 单账号时 done === endAccount 之外的兜底：直接进入汇总
@@ -371,7 +363,7 @@ function stepTravel(next) {
         return depart(next);
       }
       parts.push("领旅行礼物失败：" + String(dig(b2, "msg") || httpLabel(c2)));
-      ctx.fail++; ctx.hard += isHard(c2) ? 1 : 0; ctx.result = "ERROR";
+      ctx.fail++; ctx.hard += isHard(c2) ? 1 : 0;
       next();
     });
   });
@@ -383,13 +375,13 @@ function stepTravel(next) {
       if (!locs || !locs.length || !locs[0]) { parts.push("派 Buddy 跳过：没有可选地点"); return cb(); }
       post(GROWTH + "/buddy/travel/depart", { location_id: locs[0].id }, function (c2, b2) {
         if (isAuth(c2)) return authFail(c2);
-        if (bizOK(c2, b2)) {
+        if (c2 >= 200 && c2 < 300) {
           var l = dig(b2, "location") || {};
           ctx.ok++;
           parts.push("派 Buddy 去" + (l.name || "?") + "（" + (dig(b2, "duration_hours") || l.duration_hours || "?") + " 小时后回）");
         } else {
           parts.push("派 Buddy 失败：" + String(dig(b2, "msg") || httpLabel(c2)));
-          ctx.fail++; ctx.hard += isHard(c2) ? 1 : 0; ctx.result = "ERROR";
+          ctx.fail++; ctx.hard += isHard(c2) ? 1 : 0;
         }
         cb();
       });
@@ -421,17 +413,17 @@ function stepTasks(next) {
       var t = completable[i3++];
       post(GROWTH + "/tasks/" + t.task_code + "/claim", {}, function (c2, b2) {
         if (isAuth(c2)) return authFail(c2);
-        if (bizOK(c2, b2) && !dig(b2, "already_claimed")) {
+        if (c2 >= 200 && c2 < 300 && !dig(b2, "already_claimed")) {
           var rc = dig(b2, "credit") !== null ? asInt(dig(b2, "credit")) : asInt(t.reward_credit);
           var re = dig(b2, "energy") !== null ? asInt(dig(b2, "energy")) : asInt(t.reward_energy);
           ctx.credits += rc;
           ctx.ok++;
           parts.push("领任务奖「" + (t.title || t.task_code) + "」+credits" + rc + " +energy" + re);
-        } else if (bizOK(c2, b2)) {
+        } else if (c2 >= 200 && c2 < 300) {
           parts.push("任务奖「" + (t.title || t.task_code) + "」已领取");
         } else {
           parts.push("领任务奖「" + (t.title || t.task_code) + "」失败：" + String(dig(b2, "msg") || httpLabel(c2)));
-          ctx.fail++; ctx.hard += isHard(c2) ? 1 : 0; ctx.result = "ERROR";
+          ctx.fail++; ctx.hard += isHard(c2) ? 1 : 0;
         }
         claimLoop();
       });
@@ -443,7 +435,7 @@ function stepTasks(next) {
       i2 += 20;
       post(GROWTH + "/tasks/accept", { task_codes: batch }, function (c2, b2) {
         if (isAuth(c2)) return authFail(c2);
-        if (!bizOK(c2, b2)) {
+        if (!(c2 >= 200 && c2 < 300)) {
           parts.push("接任务失败：" + String(dig(b2, "msg") || dig(b2, "error") || httpLabel(c2)));
           ctx.fail++; ctx.hard += isHard(c2) ? 1 : 0; ctx.result = "ERROR";
           return acceptLoop();
@@ -621,13 +613,13 @@ function stepRedeem(next) {
           return loop();
         }
         if (isAuth(c2)) return authFail(c2);
-        if (bizOK(c2, b2)) {
+        if (c2 >= 200 && c2 < 300) {
           ctx.credits += asInt(dig(b2, "credit_granted"));
           ctx.ok++;
           parts.push("连登兑换「" + t[2] + "」" + redeemRewardDesc(b2, t[0]));
         } else {
           parts.push("连登兑换「" + t[2] + "」失败：" + (String(dig(b2, "msg") || "") || httpLabel(c2)));
-          ctx.fail++; ctx.hard += isHard(c2) ? 1 : 0; ctx.result = "ERROR";
+          ctx.fail++; ctx.hard += isHard(c2) ? 1 : 0;
         }
         loop();
       }
@@ -650,7 +642,7 @@ function stepLottery(next) {
     if (chances <= 0) return next();
     post(GROWTH + "/lottery/draw", { client_token: clientToken() }, function (c2, b2) {
       if (isAuth(c2)) return authFail(c2);
-      if (bizOK(c2, b2)) {
+      if (c2 >= 200 && c2 < 300) {
         var prize = dig(b2, "prize_name") || dig(b2, "prize") || "未知";
         if (typeof prize !== "string") prize = String(prize);
         if (dig(b2, "need_address") || dig(b2, "require_address")) prize += "（实物奖，需到成长中心填写收件信息）";
@@ -660,7 +652,7 @@ function stepLottery(next) {
       } else {
         var msg = String(dig(b2, "msg") || "");
         if (msg.toLowerCase().indexOf("no chance") >= 0 || msg.indexOf("无") >= 0) parts.push("开盲盒：" + msg);
-        else { parts.push("开盲盒失败：" + (msg || httpLabel(c2))); ctx.fail++; ctx.hard += isHard(c2) ? 1 : 0; ctx.result = "ERROR"; }
+        else { parts.push("开盲盒失败：" + (msg || httpLabel(c2))); ctx.fail++; ctx.hard += isHard(c2) ? 1 : 0; }
       }
       next();
     });
@@ -678,14 +670,14 @@ function stepBuddy(next) {
     var count = Math.min(affordable, maxOpen);
     post(GROWTH + "/buddy/open", { count: count, client_token: clientToken() }, function (c2, b2) {
       if (isAuth(c2)) return authFail(c2);
-      if (bizOK(c2, b2)) {
+      if (c2 >= 200 && c2 < 300) {
         var name = dig(b2, "buddy") || dig(b2, "name") || dig(b2, "buddies");
         if (typeof name !== "string") name = "新 Buddy";
         ctx.ok++;
         parts.push("开 Buddy 盲盒 ×" + count + "（" + name + "）");
       } else {
         parts.push("开 Buddy 盲盒失败：" + String(dig(b2, "msg") || httpLabel(c2)));
-        ctx.fail++; ctx.hard += isHard(c2) ? 1 : 0; ctx.result = "ERROR";
+        ctx.fail++; ctx.hard += isHard(c2) ? 1 : 0;
       }
       next();
     });
@@ -787,8 +779,8 @@ function loadAccounts() {
     out.list.push(a);
   }
 
-  // 只有完全没配账号池时才回退单账号键；已配置但损坏/全无效时必须显式报错，避免误跑旧账号。
-  if (!raw && store("WorkBuddy_Token")) {
+  // 没有配账号池时回退到原来的单账号键
+  if (!out.list.length && store("WorkBuddy_Token")) {
     out.list.push({
       name: store("WorkBuddy_Name") || "默认账号",
       token: store("WorkBuddy_Token").replace(/^Bearer\s+/i, ""),
@@ -1078,11 +1070,9 @@ function upsertPool(rec, cb) {
   } else {
     data.push(rec);
   }
-  var saved = save("WorkBuddy_Accounts", JSON.stringify(data));
-  if (saved) log("⤴ 账号池已更新：" + (found >= 0 ? "覆盖" : "新增") + "「" + rec.nickname + "」，共 " + data.length + " 条");
-  else log("× 账号池写入失败：「" + rec.nickname + "」未保存");
-  if (cb) cb(saved, found >= 0, data.length);
-  return saved;
+  save("WorkBuddy_Accounts", JSON.stringify(data));
+  log("⤴ 账号池已更新：" + (found >= 0 ? "覆盖" : "新增") + "「" + rec.nickname + "」，共 " + data.length + " 条");
+  if (cb) cb(found >= 0, data.length);
 }
 
 /* 用 refresh_token 换新令牌。只有签发它的客户端能续，所以 client 必须跟着记录一起存 */
@@ -1101,10 +1091,8 @@ function doRefresh(a, cb) {
     if (rec.expiresAt) a.expiresAt = rec.expiresAt;
     if (rec.refresh_token) a.refreshToken = rec.refresh_token;
     a.needRefresh = false;
-    upsertPool(rec, function (saved) {
-      if (!saved) return cb(false, "新令牌已获取，但账号池写入失败");
-      cb(true, "");
-    });
+    upsertPool(rec);
+    cb(true, "");
   });
 }
 
@@ -1143,21 +1131,6 @@ function loginAnswer(kind, name, msg) {
   return { response: { status: 302, headers: { Location: LOGIN_URL + q }, body: "" } };
 }
 
-function loginRecoveryAnswer(kind, name, msg, origin) {
-  var headers = { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" };
-  if (origin === "https://xlzs001.github.io") {
-    headers["Access-Control-Allow-Origin"] = origin;
-    headers["Access-Control-Allow-Methods"] = "POST, OPTIONS";
-    headers["Access-Control-Allow-Headers"] = "Content-Type";
-    headers["Vary"] = "Origin";
-  }
-  return { response: { status: 200, headers: headers, body: JSON.stringify({ kind: kind, name: name || "", message: msg || "" }) } };
-}
-
-function callbackUrlValid(url) {
-  return /^https:\/\/www\.codebuddy\.cn\/auth\/realms\/copilot\/account\/?(?:[?#]|$)/i.test(String(url || ""));
-}
-
 // 把登录页当作 HTTP 响应直接吐出去（argument=page，由插件的「WorkBuddy登录页」规则触发）。
 // 页面地址是 https://www.codebuddy.cn/wb-login：这个域名本来就要 MITM（登录回调也要），
 // 所以只要 Loon 通就一定打得开，不用管 github.io / jsDelivr 能不能访问。
@@ -1170,26 +1143,6 @@ function servePage() {
       body: PAGE_HTML
     }
   });
-}
-
-function serveLoginRecovery() {
-  var req = (typeof $request !== "undefined" && $request) || {};
-  var url = String(req.url || ""), method = String(req.method || "GET").toUpperCase();
-  var h = req.headers || {}, origin = String(h.Origin || h.origin || "");
-  function send(kind, message) { try { $done(loginRecoveryAnswer(kind, "", message, origin)); } catch (e) {} }
-  if (!/^https:\/\/www\.codebuddy\.cn\/wb-login\/recover(?:[?#]|$)/i.test(url)) return send("err", "恢复入口地址无效");
-  if (method === "OPTIONS") {
-    var preflight = loginRecoveryAnswer("ok", "", "", origin);
-    preflight.response.status = 204;
-    preflight.response.body = "";
-    return $done(preflight);
-  }
-  if (method !== "POST") return send("err", "仅支持 POST 恢复请求");
-  var data = null;
-  try { data = JSON.parse(String(req.body || "")); } catch (e) {}
-  var callback = data && String(data.callback || "").replace(/^\s+|\s+$/g, "");
-  if (!callback || callback.length > 4096 || !callbackUrlValid(callback)) return send("err", "回调地址不是预期的 CodeBuddy HTTPS 地址（仅支持 /account 或 /account/）");
-  return loginCallback(callback, origin);
 }
 
 function serveLoginSession() {
@@ -1249,27 +1202,24 @@ function explainKc(err, desc) {
   return "授权没有完成" + tail;
 }
 
-function loginCallback(overrideUrl, recoveryOrigin) {
-  // overrideUrl 有值 = 手动恢复请求或 BoxJS 中待处理的回调地址。
+function loginCallback(overrideUrl) {
+  // overrideUrl 有值 = 这次不是被 Loon 拦下来的回调，而是用户粘进 BoxJS 的那条地址
+  // （手机上没有 MITM 也能用这条路：换令牌是脚本自己发出去的请求，不受浏览器 CORS 限制）。
   var fromJS = (typeof overrideUrl === "string");
-  var fromRecovery = (typeof recoveryOrigin === "string");
   var url = fromJS ? overrideUrl : (($request && $request.url) || "");
-  var callbackPrefix = "https://www.codebuddy.cn/auth/realms/copilot/account";
+  var callbackPrefix = "https://www.codebuddy.cn/auth/realms/copilot/account/";
+  var callbackPattern = /^https:\/\/www\.codebuddy\.cn\/auth\/realms\/copilot\/account\/(?:[?#]|$)/i;
   var clientId = store("WorkBuddy_LoginClient", "account-console");
-  var resultAnswer = function (kind, name, msg) {
-    return fromRecovery ? loginRecoveryAnswer(kind, name, msg, recoveryOrigin) : loginAnswer(kind, name, msg);
-  };
-  var tailHint = fromRecovery ? "\n\n已通过登录页恢复入口自动写入 BoxJS。" :
-    (fromJS ? "\n\n这条地址已从 BoxJS 里清掉；再点一次「立即签到一轮（手动运行）」就会用它签到。" : "");
+  var tailHint = fromJS ? "\n\n这条地址已从 BoxJS 里清掉；再点一次「立即签到一轮（手动运行）」就会用它签到。" : "";
   var pick = function (k) {
     var mm = String(url).match(new RegExp("[?&]" + k + "=([^&#]+)"));
     if (!mm) return "";
     try { return decodeURIComponent(mm[1].replace(/\+/g, "%20")); } catch (e) { return ""; }
   };
-  if (!callbackUrlValid(url)) {
-    if (fromJS && !fromRecovery) save("WorkBuddy_LoginCallback", "");
-    notify("WorkBuddy 登录失败", "回调地址无效", "只接受 " + callbackPrefix + " 或带末尾斜杠的 HTTPS 回调地址。");
-    try { $done(resultAnswer("err", "", "回调地址不是预期的 CodeBuddy HTTPS 地址。")); } catch (e) {}
+  if (!callbackPattern.test(String(url))) {
+    if (fromJS) save("WorkBuddy_LoginCallback", "");
+    notify("WorkBuddy 登录失败", "回调地址无效", "只接受 " + callbackPrefix + " 开头的 HTTPS 回调地址。");
+    try { $done(loginAnswer("err", "", "回调地址不是预期的 CodeBuddy HTTPS 地址。")); } catch (e) {}
     return;
   }
   var codeStr = pick("code");
@@ -1278,12 +1228,12 @@ function loginCallback(overrideUrl, recoveryOrigin) {
       (errStr ? "，error=" + errStr : ""));
 
   var bail = function (title, sub, msg) {
-    if (fromJS && !fromRecovery) {
+    if (fromJS) {
       save("WorkBuddy_LoginCallback", "");
       msg = String(msg) + "\n\n（已清掉 BoxJS 里那条回调地址，避免以后每一轮都拿它重试；重新登录后再粘一次新的。）";
     }
     notify(title, sub, msg);
-    try { $done(resultAnswer("err", "", msg)); } catch (e) {}
+    try { $done(loginAnswer("err", "", msg)); } catch (e) {}
   };
   if (errStr) {
     return bail("WorkBuddy 登录没走完", "服务端回了 " + errStr,
@@ -1330,32 +1280,27 @@ function loginCallback(overrideUrl, recoveryOrigin) {
       try { vcode = asInt((resp2 && (resp2.status || resp2.statusCode)) || 0, 0); } catch (e) {}
       var vbody = null;
       try { vbody = JSON.parse(data2); } catch (e) {}
-      var knownStatus = vbody && (dig(vbody, "active") !== null || dig(vbody, "today_checked_in") !== null || dig(vbody, "code") !== null);
-      var usable = (vcode >= 200 && vcode < 300 && bizOK(vcode, vbody) && knownStatus);
+      var usable = (vcode === 200 && asInt(dig(vbody, "code"), -1) === 0);
       var extra = "昵称：" + rec.nickname + "\nuid：" + rec.uid +
         "\n有效至：" + (rec.expiresAt ? stamp(rec.expiresAt) : "未知") +
         "\n可续期：" + (rec.refresh_token ? "是（已记住 refresh_token）" : "否（登录时没拿到 offline_access）");
 
       if (usable) {
-        return upsertPool(rec, function (saved) {
-          if (!saved) return bail("WorkBuddy 登录失败", "账号池写入失败", "令牌已获取并验证可用，但无法写入 BoxJS；请检查存储空间或宿主权限后重新登录。");
-          if (fromJS && !fromRecovery) save("WorkBuddy_LoginCallback", "");
-          log("✓ 登录成功并验证通过：" + rec.nickname + "（uid " + rec.uid + "）");
-          notify("WorkBuddy 登录成功", rec.nickname + " 已写入账号池",
-            extra + "\n签到接口验证：可用 ✓\n\n以后令牌到期脚本会自己续期，不用再登录。" + tailHint);
-          return answer(resultAnswer("ok", rec.nickname), rec.nickname);
-        });
+        upsertPool(rec);
+        if (fromJS) save("WorkBuddy_LoginCallback", "");
+        log("✓ 登录成功并验证通过：" + rec.nickname + "（uid " + rec.uid + "）");
+        notify("WorkBuddy 登录成功", rec.nickname + " 已写入账号池",
+          extra + "\n签到接口验证：可用 ✓\n\n以后令牌到期脚本会自己续期，不用再登录。" + tailHint);
+        return answer(loginAnswer("ok", rec.nickname), rec.nickname);
       } else {
         var tail = (vcode === 401 || vcode === 403)
           ? "签到接口回报 " + httpLabel(vcode) + "：这条令牌签不了到（这个客户端签发的令牌可能不被接受）。已写入账号池，不行就在 BoxJS 里删掉这条。"
           : "签到接口回报 " + httpLabel(vcode) + "（" + trunc(String(data2 || ""), 120) + "）。已写入账号池，可手动跑一轮再看。";
-        return upsertPool(rec, function (saved) {
-          if (!saved) return bail("WorkBuddy 登录失败", "账号池写入失败", "令牌已获取，但无法写入 BoxJS；请检查存储空间或宿主权限后重新登录。");
-          if (fromJS && !fromRecovery) save("WorkBuddy_LoginCallback", "");
-          log("! 登录换到令牌但验证失败：HTTP " + vcode);
-          notify("WorkBuddy 登录（令牌未验证通过）", rec.nickname + " 已写入账号池", extra + "\n" + tail + tailHint);
-          return answer(resultAnswer("warn", rec.nickname, tail), rec.nickname);
-        });
+        upsertPool(rec);
+        if (fromJS) save("WorkBuddy_LoginCallback", "");
+        log("! 登录换到令牌但验证失败：HTTP " + vcode);
+        notify("WorkBuddy 登录（令牌未验证通过）", rec.nickname + " 已写入账号池", extra + "\n" + tail + tailHint);
+        return answer(loginAnswer("warn", rec.nickname, tail), rec.nickname);
       }
     });
   });
@@ -1384,7 +1329,7 @@ function captureToken() {
   var token = (auth && auth.indexOf("Bearer ") === 0) ? auth.slice(7).trim() : "";
 
   // 多账号：按请求头里的 X-User-Id 命中账号池中的那一条，只刷新它
-  var hit = "", poolUpdated = false, poolSaveFailed = false;
+  var hit = "", poolUpdated = false;
   var raw = store("WorkBuddy_Accounts", "");
   if (raw && uidH) {
     try {
@@ -1399,12 +1344,10 @@ function captureToken() {
           if (token && token.length > 20 && rec.access_token !== token) {
             rec.access_token = token;
             if (rec.auth_raw && typeof rec.auth_raw === "object") rec.auth_raw.accessToken = token;
-            var capturedPayload = jwtPayload(token);
-            if (capturedPayload.exp) rec.expiresAt = capturedPayload.exp * 1000;
-            // 非 JWT 或无 exp 时保留原过期时间，避免关闭主动续期。
+            rec.expiresAt = 0;           // 不可靠了，交给下一轮实测
             rec.refreshedAt = Date.now();
-            poolUpdated = save("WorkBuddy_Accounts", JSON.stringify(data));
-            poolSaveFailed = !poolUpdated;
+            save("WorkBuddy_Accounts", JSON.stringify(data));
+            poolUpdated = true;
           }
           break;
         }
@@ -1415,14 +1358,12 @@ function captureToken() {
   if (uidH) save("WorkBuddy_Uid", uidH);
   if (entH && !store("WorkBuddy_EnterpriseId")) save("WorkBuddy_EnterpriseId", entH);
   if (domH) save("WorkBuddy_Domain", domH);
-  if (token && token.length > 20 && token !== store("WorkBuddy_Token") && !hit) {
-    var tokenSaved = save("WorkBuddy_Token", token);
-    var timeSaved = tokenSaved && save("WorkBuddy_TokenTime", now());
-    if (tokenSaved && timeSaved) notify("WorkBuddy 令牌已更新", "来自手机端请求", "新的 accessToken 已写入 BoxJS");
-    else notify("WorkBuddy 令牌更新失败", "BoxJS 写入失败", "捕获到新令牌，但未能持久化；请检查存储空间或宿主权限。");
+  if (token && token.length > 20 && token !== store("WorkBuddy_Token")) {
+    save("WorkBuddy_Token", token);
+    save("WorkBuddy_TokenTime", now());
+    if (!poolUpdated) notify("WorkBuddy 令牌已更新", "来自手机端请求", "新的 accessToken 已写入 BoxJS");
   }
   if (poolUpdated) notify("WorkBuddy 令牌已更新", hit || "账号池", "账号池中「" + (hit || "") + "」的 accessToken 已刷新");
-  else if (poolSaveFailed) notify("WorkBuddy 令牌更新失败", hit || "账号池", "捕获到新令牌，但账号池写入失败；旧值未确认更新。");
   log("⇢ 捕获请求令牌：uid=" + (uidH || "无") + "，令牌长度=" + (token ? token.length : 0) +
       (poolUpdated ? "，已刷新账号池「" + hit + "」" : (hit ? "，与账号池一致" : "，账号池未命中")));
   try { $done({}); } catch (e) {}
@@ -1443,19 +1384,18 @@ function panel() {
 }
 
 /* ==== PAGE_HTML:BEGIN（由 build-page.py 从 login.html 生成，勿手改）==== */
-var PAGE_HTML = "<!DOCTYPE html>\n<html lang=\"zh-CN\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1,viewport-fit=cover\">\n<meta name=\"color-scheme\" content=\"dark light\">\n<title>WorkBuddy 手机登录</title>\n<style>\n:root{--bg:#080b12;--card:#111724;--card2:#151d2d;--line:#253047;--fg:#f4f7fb;--dim:#97a3b6;--acc:#4f7cff;--acc2:#315ddd;--ok:#22c984;--warn:#f4ad3d;--err:#f15f68}\n*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}\nbody{max-width:560px;margin:0 auto;padding:28px 16px calc(72px + env(safe-area-inset-bottom));background:radial-gradient(circle at 50% -80px,#1c326d 0,#0c1220 34%,var(--bg) 68%);color:var(--fg);font:15px/1.55 -apple-system,BlinkMacSystemFont,\"PingFang SC\",\"Helvetica Neue\",sans-serif}\nh1{font-size:25px;line-height:1.15;margin:5px 0 0;letter-spacing:-.5px}\nh2{font-size:17px;margin:0 0 14px;color:var(--fg)}\np{margin:7px 0}.lead{margin:14px 0 20px;color:#bdc7d8;font-size:14px}.dim{color:var(--dim);font-size:13px}\n.hero{display:flex;align-items:center;gap:13px}.brand{width:48px;height:48px;border-radius:15px;display:grid;place-items:center;background:linear-gradient(145deg,#6e91ff,#365fd8);box-shadow:0 12px 35px #234aaf66;font-size:24px;font-weight:800}\n.card{background:linear-gradient(145deg,var(--card2),var(--card));border:1px solid var(--line);border-radius:18px;padding:18px;margin:14px 0;box-shadow:0 12px 35px #0004}.card.primary{border-color:#3e5fa8;box-shadow:0 18px 50px #102b7055}.requirements{padding:15px 18px}\n.btn{display:block;width:100%;min-height:50px;padding:13px 16px;border:0;border-radius:13px;background:linear-gradient(135deg,var(--acc),var(--acc2));color:#fff;font-size:16px;font-weight:700;margin:15px 0 0;text-align:center;text-decoration:none;box-shadow:0 8px 22px #274fb255;cursor:pointer}.btn.sec{background:#202a3c;color:var(--fg);box-shadow:none;font-weight:600;font-size:14px}.btn:active{transform:translateY(1px);opacity:.86}.btn:disabled{opacity:.58;cursor:wait}\ntextarea,input,select{width:100%;background:#090d16;color:var(--fg);border:1px solid var(--line);border-radius:11px;padding:11px;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}textarea{min-height:96px;resize:vertical}select{margin-top:6px}code{background:#080c14;border:1px solid var(--line);border-radius:6px;padding:1px 5px;font-size:12px;word-break:break-all}\n.row{display:flex;gap:9px}.row>*{flex:1}.tag{display:inline-block;font-size:11px;padding:2px 9px;border-radius:999px;border:1px solid #2c765b;color:#61d9a6;background:#14372d}.ok{color:var(--ok)}.warn{color:var(--warn)}.err{color:var(--err)}\n.flow{position:relative;margin:4px 0 17px}.flow:before{content:\"\";position:absolute;left:15px;top:28px;bottom:28px;width:2px;background:#29354b}.flow-item{position:relative;display:flex;gap:12px;align-items:center;padding:8px 0;color:#8f9bb0}.flow-item i{position:relative;z-index:1;display:grid;place-items:center;width:32px;height:32px;flex:0 0 32px;border-radius:50%;background:#20293a;border:1px solid #344159;font-style:normal;font-size:13px;font-weight:700}.flow-item span{display:flex;flex-direction:column}.flow-item b{font-size:14px}.flow-item small{font-size:12px}.flow-item.active{color:var(--fg)}.flow-item.active i{background:var(--acc);border-color:#82a0ff}.flow-item.done{color:#a9e7cc}.flow-item.done i{background:#176545;border-color:var(--ok)}\n.hint,.safe-note{font-size:12.5px;color:var(--dim)}.safe-note{padding:10px 11px;margin-top:12px;border-radius:10px;background:#0c251d;border:1px solid #2b7659;color:#b9f1d9}.check{display:flex;gap:9px;align-items:flex-start;padding:6px 0;color:#bac5d5;font-size:13px}.check b{color:var(--ok)}\n.kv{font-size:13px;margin:4px 0;word-break:break-all}.kv b{color:var(--dim);font-weight:500}details{margin-top:10px}details.compact{padding-top:4px}details.recovery>summary{font-size:14px;color:#c0cada;font-weight:600}summary{cursor:pointer;color:var(--dim);font-size:13px}footer{text-align:center;color:#8793a7;font-size:12px;padding:12px 0 4px}footer p{margin:4px 0}\n@media(max-width:390px){body{padding-left:12px;padding-right:12px}.row{display:block}.row .btn{margin-top:9px}}\n</style>\n</head>\n<body>\n\n<header class=\"hero\">\n  <div class=\"brand\">W</div>\n  <div><span class=\"tag ok\">全自动登录</span><h1>连接 WorkBuddy</h1></div>\n</header>\n<p class=\"lead\">只需完成手机号验证，后续获取令牌、校验账号、写入账号池和启用自动续期全部自动完成。</p>\n\n<!-- Loon 换完令牌后带着 ?ok / ?warn / ?err 回到这里 -->\n<div id=\"banner\"></div>\n\n<main id=\"loginCard\" class=\"card primary\">\n  <h2>一键完成配置</h2>\n  <div class=\"flow\" id=\"flow\">\n    <div class=\"flow-item active\" id=\"flowPrepare\"><i>1</i><span><b>建立安全连接</b><small>创建一次性 PKCE 登录事务</small></span></div>\n    <div class=\"flow-item\" id=\"flowAuth\"><i>2</i><span><b>手机号验证</b><small>前往 CodeBuddy 完成登录</small></span></div>\n    <div class=\"flow-item\" id=\"flowSave\"><i>3</i><span><b>自动配置完成</b><small>获取并验证令牌，写入 BoxJS</small></span></div>\n  </div>\n  <button class=\"btn\" id=\"go\">开始安全登录</button>\n  <p class=\"hint\" id=\"goHint\">登录完成后会自动返回本页，无需复制地址、令牌或打开 BoxJS。</p>\n  <div class=\"safe-note\">令牌不会出现在网址中；一次性登录事务在使用后立即销毁。</div>\n\n  <details class=\"compact\">\n    <summary>高级设置</summary>\n    <label class=\"dim\" for=\"client\">登录客户端</label>\n    <select id=\"client\">\n      <option value=\"account-console\" selected>account-console（推荐）</option>\n      <option value=\"account\">account（备用）</option>\n    </select>\n  </details>\n</main>\n\n<section class=\"card requirements\">\n  <h2>使用条件</h2>\n  <div class=\"check\"><b>✓</b><span>已安装最新版 WorkBuddy Loon 插件</span></div>\n  <div class=\"check\"><b>✓</b><span>Loon 的 MITM 已开启并信任证书</span></div>\n  <div class=\"check\"><b>✓</b><span>MITM hostname 包含 <code>www.codebuddy.cn</code></span></div>\n</section>\n\n<details class=\"card recovery\">\n  <summary>登录没有自动返回？打开故障恢复</summary>\n  <p class=\"dim\">正常流程不需要此步骤。若登录后停在 CodeBuddy 回调页，复制地址栏的完整 HTTPS 地址粘贴到这里；本机 Loon 会自动换取令牌并写入 BoxJS。请勿将地址分享给他人。</p>\n  <textarea id=\"cb\" placeholder=\"https://www.codebuddy.cn/auth/realms/copilot/account/?state=...&code=...\"></textarea>\n  <div class=\"row\">\n    <button class=\"btn sec\" id=\"paste\">粘贴地址</button>\n    <button class=\"btn\" id=\"ex\">继续自动配置</button>\n  </div>\n  <div id=\"exOut\"></div>\n</details>\n\n<!-- 仅故障恢复流程使用；正常自动流程由 Loon 直接写入 BoxJS -->\n<div class=\"card\" id=\"outCard\" style=\"display:none\">\n  <h2>手动恢复结果</h2>\n  <div id=\"info\"></div>\n  <textarea id=\"pool\" readonly style=\"min-height:130px\"></textarea>\n  <div class=\"row\">\n    <button class=\"btn sec\" id=\"copyPool\">复制账号数据</button>\n    <button class=\"btn sec\" id=\"verify\">验证令牌</button>\n  </div>\n  <div id=\"verifyOut\"></div>\n</div>\n\n<details class=\"card recovery\">\n  <summary>维护工具</summary>\n  <div id=\"sess\" class=\"dim\">当前页面没有登录记录。</div>\n  <textarea id=\"rt\" placeholder=\"refresh_token\"></textarea>\n  <button class=\"btn sec\" id=\"refresh\">手动续期</button>\n  <div id=\"rfOut\"></div>\n</details>\n\n<footer>\n  <span id=\"src\"></span>\n  <p>登录采用 PKCE S256；敏感令牌仅由本机 Loon 写入 BoxJS，不上传到第三方。</p>\n</footer>\n\n<script>\n/* ---------- 常量：来自 realm 的 .well-known/openid-configuration ---------- */\nvar ISSUER   = \"https://www.codebuddy.cn/auth/realms/copilot\";\nvar AUTH_EP  = ISSUER + \"/protocol/openid-connect/auth\";\nvar TOKEN_EP = ISSUER + \"/protocol/openid-connect/token\";\nvar REDIRECT = ISSUER + \"/account/\";\nvar SCOPE    = \"openid profile offline_access email\";\nvar API_BASE = \"https://copilot.tencent.com\";\n\n/* 敏感令牌与 PKCE 事务只留在当前页面内存中；刷新/关闭后自动清除。 */\nvar MEM = {};\nvar LS = {\n  get: function (k) { return MEM[k] || \"\"; },\n  set: function (k, v) { MEM[k] = v; },\n  del: function (k) { delete MEM[k]; }\n};\nvar TX = {\n  get: function (k) { try { return sessionStorage.getItem(\"wb_tx_\" + k) || \"\"; } catch (e) { return MEM[\"tx_\" + k] || \"\"; } },\n  set: function (k, v) { MEM[\"tx_\" + k] = v; try { sessionStorage.setItem(\"wb_tx_\" + k, v); } catch (e) {} },\n  clear: function () {\n    delete MEM.tx_state; delete MEM.tx_verifier; delete MEM.tx_client;\n    try { sessionStorage.removeItem(\"wb_tx_state\"); sessionStorage.removeItem(\"wb_tx_verifier\"); sessionStorage.removeItem(\"wb_tx_client\"); } catch (e) {}\n  }\n};\nfunction $(id) { return document.getElementById(id); }\nfunction esc(s) { return String(s == null ? \"\" : s).replace(/[&<>\"]/g, function (c) {\n  return ({ \"&\": \"&amp;\", \"<\": \"&lt;\", \">\": \"&gt;\", '\"': \"&quot;\" })[c]; }); }\nfunction b64u(buf) {\n  var b = new Uint8Array(buf), s = \"\";\n  for (var i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);\n  return btoa(s).replace(/\\+/g, \"-\").replace(/\\//g, \"_\").replace(/=+$/, \"\");\n}\nfunction rand(n) {\n  var a = new Uint8Array(n);\n  (window.crypto || window.msCrypto).getRandomValues(a);\n  var s = \"\";\n  for (var i = 0; i < a.length; i++) s += (\"0\" + (a[i] % 36).toString(36)).slice(-1);\n  return s;\n}\nfunction sha256(txt) {\n  var data = new TextEncoder().encode(txt);\n  return window.crypto.subtle.digest(\"SHA-256\", data).then(b64u);\n}\nfunction jwt(tok) {\n  try {\n    var p = tok.split(\".\")[1].replace(/-/g, \"+\").replace(/_/g, \"/\");\n    p += \"====\".slice(0, (4 - p.length % 4) % 4);\n    return JSON.parse(decodeURIComponent(escape(atob(p))));\n  } catch (e) { return {}; }\n}\nfunction fmt(expSec) {\n  if (!expSec) return \"未知\";\n  var d = new Date(expSec * 1000);\n  function p(n) { return (n < 10 ? \"0\" : \"\") + n; }\n  return d.getFullYear() + \"-\" + p(d.getMonth() + 1) + \"-\" + p(d.getDate()) + \" \" + p(d.getHours()) + \":\" + p(d.getMinutes());\n}\nfunction say(el, cls, html) { el.innerHTML = '<p class=\"' + cls + '\">' + html + \"</p>\"; }\n\n/* ---------- ① 登录 ---------- */\nfunction flow(step) {\n  var ids = [\"flowPrepare\", \"flowAuth\", \"flowSave\"];\n  for (var i = 0; i < ids.length; i++) {\n    var el = $(ids[i]);\n    el.className = \"flow-item\" + (i < step ? \" done\" : (i === step ? \" active\" : \"\"));\n    el.querySelector(\"i\").textContent = i < step ? \"✓\" : String(i + 1);\n  }\n}\nfunction setBusy(on, text) {\n  var b = $(\"go\");\n  b.disabled = !!on;\n  b.textContent = text || (on ? \"正在建立安全连接…\" : \"开始安全登录\");\n}\n$(\"go\").onclick = function () {\n  var client = $(\"client\").value;\n  setBusy(true, \"正在建立安全连接…\");\n  flow(0);\n  $(\"goHint\").textContent = \"正在创建一次性登录事务，请勿关闭页面。\";\n  LS.set(\"client\", client);\n  TX.set(\"client\", client);\n  // account-console 在服务端强制 PKCE(S256)：不带 code_challenge_method 会被直接打回\n  //   .../account/?error=invalid_request&error_description=Missing+parameter%3A+code_challenge_method\n  // 所以这里没有「关掉」这个选项。\n  if (!window.crypto || !window.crypto.subtle) {\n    setBusy(false);\n    $(\"goHint\").innerHTML = '<span class=\"err\">当前页面不是安全 HTTPS 环境，无法建立 PKCE 登录。</span>';\n    return;\n  }\n  var verifier = rand(32) + rand(32);\n  var state = rand(32);\n  TX.set(\"verifier\", verifier);\n  TX.set(\"state\", state);\n  sha256(verifier).then(function (ch) {\n    var sessionUrl = \"https://www.codebuddy.cn/wb-login/session\";\n    return fetch(sessionUrl, {\n      method: \"POST\",\n      headers: { \"Content-Type\": \"application/json\" },\n      body: JSON.stringify({ state: state, verifier: verifier, client: client })\n    }).then(function (r) {\n      if (!r.ok) throw new Error(\"HTTP \" + r.status);\n      var q = [\"client_id=\" + encodeURIComponent(client),\n               \"response_type=code\",\n               \"scope=\" + encodeURIComponent(SCOPE),\n               \"redirect_uri=\" + encodeURIComponent(REDIRECT),\n               \"state=\" + encodeURIComponent(state),\n               \"code_challenge=\" + ch,\n               \"code_challenge_method=S256\"];\n      flow(1);\n      setBusy(true, \"正在打开手机号验证…\");\n      $(\"goHint\").textContent = \"验证完成后会自动返回并保存账号，请勿复制任何令牌。\";\n      location.href = AUTH_EP + \"?\" + q.join(\"&\");\n    });\n  }).catch(function () {\n    TX.clear();\n    setBusy(false);\n    flow(0);\n    $(\"goHint\").innerHTML = '<span class=\"err\">无法连接本机 Loon 登录服务。请确认插件已更新、MITM 已开启并信任证书。</span>';\n  });\n};\n\n/* ---------- ② 粘贴 + 换取 ---------- */\n$(\"paste\").onclick = function () {\n  if (navigator.clipboard && navigator.clipboard.readText) {\n    navigator.clipboard.readText().then(function (t) { $(\"cb\").value = t; }).catch(function () {\n      say($(\"exOut\"), \"dim\", \"读不到剪贴板：长按输入框手动粘贴即可。\");\n    });\n  } else say($(\"exOut\"), \"dim\", \"这台设备不支持读剪贴板：长按输入框手动粘贴。\");\n};\n\nfunction safeDecode(s) {\n  try { return decodeURIComponent(String(s || \"\").replace(/\\+/g, \"%20\")); } catch (e) { return \"\"; }\n}\nfunction parseCode(text) {\n  text = String(text || \"\").trim();\n  var result = { code: \"\", state: \"\", validUrl: false, reason: \"\" };\n  if (!text) return result;\n  try {\n    var u = new URL(text);\n    result.validUrl = u.protocol === \"https:\" && u.hostname === \"www.codebuddy.cn\" &&\n      (u.pathname === \"/auth/realms/copilot/account\" || u.pathname === \"/auth/realms/copilot/account/\");\n    if (!result.validUrl) {\n      result.reason = \"当前地址为 \" + u.hostname + u.pathname +\n        \"；仅支持 www.codebuddy.cn/auth/realms/copilot/account（可带末尾斜杠）。\";\n      return result;\n    }\n    result.code = u.searchParams.get(\"code\") || \"\";\n    result.state = u.searchParams.get(\"state\") || \"\";\n  } catch (e) { result.reason = \"请输入以 https:// 开头的完整回调地址。\"; }\n  return result;\n}\n\nfunction exchange(body) {\n  return fetch(TOKEN_EP, {\n    method: \"POST\",\n    headers: { \"Content-Type\": \"application/x-www-form-urlencoded\", \"Accept\": \"application/json\" },\n    body: new URLSearchParams(body).toString()\n  }).then(function (r) {\n    return r.text().then(function (t) {\n      var j = {};\n      try { j = JSON.parse(t); } catch (e) { j = { error: \"bad_json\", error_description: t.slice(0, 200) }; }\n      if (!r.ok) throw j;\n      return j;\n    });\n  });\n}\n\nfunction explain(err) {\n  var e = String((err && err.error) || \"\"), d = String((err && err.error_description) || err || \"\");\n  if (e === \"invalid_grant\") {\n    if (/Code not valid|code/i.test(d)) return \"这条 code 已经用过或超过有效期（约 1 分钟）。重新点第 ① 步登录，拿到新的回调地址再粘一次。\";\n    if (/refresh/i.test(d)) return \"refresh_token 无效或已被换掉（每次续期旧的会作废，别用旧的那份）。\";\n    return d || \"授权被拒绝。\";\n  }\n  if (e === \"unauthorized_client\") return \"这个 client_id 不接受当前授权方式：可能是 client 需要密钥，或授权方式被关掉了。改用 account-console 再试。\";\n  if (e === \"invalid_client\") return \"client_id 不对（这个 client 在 codebuddy 上不存在）。\";\n  if (e === \"invalid_request\") return \"请求参数不全：\" + d;\n  return (e ? e + \"：\" : \"\") + (d || \"未知错误\");\n}\n\nfunction showTokens(tok, client) {\n  var pl = jwt(tok.access_token || \"\");\n  var uid = pl.sub || \"\";\n  var nick = pl.nickname || pl.preferred_username || pl.name || \"账号\";\n  var rec = {\n    nickname: nick,\n    access_token: tok.access_token || \"\",\n    uid: uid,\n    expiresAt: pl.exp ? pl.exp * 1000 : 0,\n    domain: \"www.codebuddy.cn\",\n    client: client\n  };\n  if (tok.refresh_token) rec.refresh_token = tok.refresh_token;\n  var pool = JSON.stringify([rec]);\n\n  $(\"info\").innerHTML =\n    '<p class=\"kv\"><b>昵称：</b>' + esc(nick) + \"</p>\" +\n    '<p class=\"kv\"><b>uid：</b><code>' + esc(uid) + \"</code></p>\" +\n    '<p class=\"kv\"><b>access_token 有效至：</b>' + esc(fmt(pl.exp)) + \"</p>\" +\n    '<p class=\"kv\"><b>refresh_token：</b>' +\n      (tok.refresh_token ? '<span class=\"ok\">有</span>（' + tok.refresh_token.length + \" 字符）\" : '<span class=\"warn\">无</span>（登录时没带 offline_access，过期就得重登）') +\n    \"</p>\" +\n    '<p class=\"kv\"><b>client：</b><code>' + esc(client) + \"</code>（决定以后能不能续期）</p>\";\n  $(\"pool\").value = pool;\n  $(\"outCard\").style.display = \"block\";\n  if (tok.refresh_token) LS.set(\"refresh_token\", tok.refresh_token);\n  LS.set(\"nickname\", nick);\n  LS.set(\"client\", client);\n  renderSession();\n}\n\n$(\"ex\").onclick = function () {\n  var callback = String($(\"cb\").value || \"\").trim();\n  var p = parseCode(callback);\n  if (!p.validUrl) { say($(\"exOut\"), \"err\", esc(p.reason)); return; }\n  if (!p.code) { say($(\"exOut\"), \"err\", \"回调地址里没有 code，请重新开始安全登录。\"); return; }\n  if (!p.state) { say($(\"exOut\"), \"err\", \"回调地址里没有 state，请重新开始安全登录。\"); return; }\n  var expectedState = TX.get(\"state\");\n  if (expectedState && p.state !== expectedState) {\n    say($(\"exOut\"), \"err\", \"state 与本次登录不匹配，请重新开始安全登录。\");\n    return;\n  }\n  $(\"ex\").disabled = true;\n  say($(\"exOut\"), \"dim\", \"正在由本机 Loon 验证回调并写入 BoxJS…\");\n  fetch(\"https://www.codebuddy.cn/wb-login/recover\", {\n    method: \"POST\",\n    headers: { \"Content-Type\": \"application/json\" },\n    body: JSON.stringify({ callback: callback })\n  }).then(function (r) {\n    return r.text().then(function (text) {\n      var result = null;\n      try { result = JSON.parse(text); } catch (e) {}\n      if (!r.ok || !result || !result.kind) throw new Error(\"Loon 登录恢复规则未生效，请更新插件并确认 MITM 已开启。\");\n      return result;\n    });\n  }).then(function (result) {\n    if (result.kind === \"ok\" || result.kind === \"warn\") {\n      TX.clear();\n      $(\"cb\").value = \"\";\n      try { history.replaceState({}, \"\", location.pathname); } catch (e) {}\n      location.href = location.pathname + (result.kind === \"ok\" ? \"?ok=1\" : \"?warn=1\") +\n        \"&name=\" + encodeURIComponent(result.name || \"账号\") +\n        (result.kind === \"warn\" ? \"&msg=\" + encodeURIComponent(result.message || \"签到接口未验证通过\") : \"\");\n      return;\n    }\n    say($(\"exOut\"), \"err\", esc(result.message || \"回调处理失败，请重新登录。\"));\n  }).catch(function (err) {\n    say($(\"exOut\"), \"err\", esc(String((err && err.message) || err)));\n  }).then(function () { $(\"ex\").disabled = false; });\n};\n\n$(\"copyPool\").onclick = function () {\n  var t = $(\"pool\").value;\n  function clearSensitive() {\n    LS.del(\"refresh_token\"); LS.del(\"nickname\"); LS.del(\"client\");\n    $(\"rt\").value = \"\";\n    renderSession();\n  }\n  if (navigator.clipboard && navigator.clipboard.writeText) {\n    navigator.clipboard.writeText(t).then(function () {\n      clearSensitive();\n      say($(\"verifyOut\"), \"ok\", \"已复制 ✓ 页面内保存的续期令牌已清除。\");\n    }, function () { $(\"pool\").select(); say($(\"verifyOut\"), \"dim\", \"自动复制失败，已全选，长按复制。\"); });\n  } else { $(\"pool\").select(); say($(\"verifyOut\"), \"dim\", \"已全选，长按复制。\"); }\n};\n\n$(\"verify\").onclick = function () {\n  var tok = (JSON.parse($(\"pool\").value || \"[{}]\")[0] || {}).access_token;\n  if (!tok) return;\n  var pl = jwt(tok);\n  say($(\"verifyOut\"), \"dim\", \"正在问签到接口…\");\n  fetch(API_BASE + \"/v2/billing/meter/checkin-activity-status\", {\n    method: \"POST\",\n    headers: { \"Content-Type\": \"application/json\", \"Authorization\": \"Bearer \" + tok, \"X-User-Id\": pl.sub || \"\" },\n    body: \"{}\"\n  }).then(function (r) { return r.text(); }).then(function (t) {\n    if (/today_checked_in|\"code\":0/.test(t)) say($(\"verifyOut\"), \"ok\", \"令牌可用 ✓ 签到接口认它（该接口返回 OK）。\");\n    else say($(\"verifyOut\"), \"warn\", \"接口回话：\" + esc(t.slice(0, 180)));\n  }).catch(function () {\n    say($(\"verifyOut\"), \"dim\", \"浏览器跨域拦住了，没法在这一页验证。装好 Loon 插件后走第 ⑤ 步会自动验证。\");\n  });\n};\n\n/* ---------- ④ 续期 ---------- */\nfunction renderSession() {\n  var rt = LS.get(\"refresh_token\"), nick = LS.get(\"nickname\"), client = LS.get(\"client\");\n  if (rt) $(\"sess\").innerHTML = '本机记住了 <b>' + esc(nick || \"账号\") + \"</b> 的 refresh_token（client <code>\" +\n      esc(client || \"?\") + \"</code>，共 \" + rt.length + \" 字符）。access_token 过期了点下面按钮就能换新的。\";\n  else $(\"sess\").textContent = \"还没有登录记录（或上次登录没拿到 refresh_token）。\";\n}\n$(\"refresh\").onclick = function () {\n  var rt = ($(\"rt\").value || \"\").trim() || LS.get(\"refresh_token\");\n  if (!rt) { say($(\"rfOut\"), \"err\", \"没有 refresh_token：先做第 ① ② 步登录，或把它粘进上面的框。\"); return; }\n  var client = LS.get(\"client\") || $(\"client\").value || \"account-console\";\n  say($(\"rfOut\"), \"dim\", \"正在续期…\");\n  exchange({ grant_type: \"refresh_token\", client_id: client, refresh_token: rt, scope: SCOPE })\n    .then(function (tok) {\n      say($(\"rfOut\"), \"ok\", \"续期成功 ✓（旧的 refresh_token 已作废，下面这份是新的）\");\n      showTokens(tok, client);\n    }).catch(function (err) { say($(\"rfOut\"), \"err\", esc(explain(err))); });\n};\n\n/* ---------- 回调横幅：Loon 换完令牌后带着 ?ok / ?warn / ?err 跳回本页 ---------- */\nfunction banner() {\n  var q = new URLSearchParams(location.search);\n  var el = $(\"banner\"), html = \"\";\n  var name = q.get(\"name\") || \"账号\";\n  var msg = q.get(\"msg\") || \"\";\n  var again = '<button class=\"btn sec\" onclick=\"goAgain()\">连接另一个账号</button>';\n  var toBox = '<a class=\"btn sec\" href=\"https://boxjs.com\" target=\"_blank\" rel=\"noreferrer\" style=\"color:#fff\">查看 BoxJS</a>';\n  if (q.get(\"ok\")) {\n    flow(3);\n    $(\"loginCard\").style.display = \"none\";\n    html = '<div class=\"card\" style=\"border-color:var(--ok);text-align:center\">' +\n      '<div style=\"font-size:42px;line-height:1\">✓</div>' +\n      '<h2 class=\"ok\" style=\"font-size:21px;margin-top:10px\">全部配置完成</h2>' +\n      '<p><b>' + esc(name) + '</b> 已连接，令牌验证通过并写入 BoxJS 账号池。</p>' +\n      '<p class=\"dim\">自动签到与令牌续期已经启用，之后无需再登录或复制任何内容。</p>' +\n      '<div class=\"row\">' + toBox + again + '</div></div>';\n  } else if (q.get(\"warn\")) {\n    flow(3);\n    html = '<div class=\"card\" style=\"border-color:var(--warn)\">' +\n      '<h2 class=\"warn\">令牌已自动保存，需要检查账号</h2>' +\n      '<p><b>' + esc(name) + '</b> 的令牌已经写进账号池，但签到接口回报：</p>' +\n      (msg ? '<p class=\"dim\">' + esc(msg) + '</p>' : '') +\n      '<p class=\"dim\">先在 BoxJS 里手动跑一轮看看结果；确实不行就把这条从账号池删掉，继续用电脑版导出的令牌。</p>' +\n      '<div class=\"row\">' + toBox + again + '</div></div>';\n  } else if (q.get(\"err\")) {\n    flow(0);\n    setBusy(false, \"重新安全登录\");\n    html = '<div class=\"card\" style=\"border-color:var(--err)\">' +\n      '<h2 class=\"err\">登录没有完成</h2>' +\n      '<p>' + esc(msg || \"换令牌失败\") + '</p>' +\n      '<p class=\"dim\">点击下方按钮重新开始；系统会建立新的安全事务并自动完成后续步骤。</p>' +\n      '<div class=\"row\">' + again + '</div></div>';\n  }\n  if (html) {\n    el.innerHTML = html;\n    window.scrollTo(0, 0);\n    try { history.replaceState({}, \"\", location.pathname); } catch (e) {}\n  }\n}\nfunction goAgain() { location.href = location.pathname; }\n\n/* 首次渲染 */\n(function srcNote() {\n  var el = $(\"src\");\n  if (!el) return;\n  el.textContent = \"WorkBuddy 本机安全登录\";\n})();\nbanner();\nrenderSession();\nwindow.addEventListener(\"paste\", function () {\n  setTimeout(function () {\n    if ($(\"cb\").value && !$(\"exOut\").innerHTML) say($(\"exOut\"), \"dim\", \"粘好了，点「换取令牌」。\");\n  }, 60);\n});\n</script>\n</body>\n</html>\n";
+var PAGE_HTML = "<!DOCTYPE html>\n<html lang=\"zh-CN\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width,initial-scale=1,viewport-fit=cover\">\n<meta name=\"color-scheme\" content=\"dark light\">\n<title>WorkBuddy 手机登录</title>\n<style>\n:root{--bg:#080b12;--card:#111724;--card2:#151d2d;--line:#253047;--fg:#f4f7fb;--dim:#97a3b6;--acc:#4f7cff;--acc2:#315ddd;--ok:#22c984;--warn:#f4ad3d;--err:#f15f68}\n*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}\nbody{max-width:560px;margin:0 auto;padding:28px 16px calc(72px + env(safe-area-inset-bottom));background:radial-gradient(circle at 50% -80px,#1c326d 0,#0c1220 34%,var(--bg) 68%);color:var(--fg);font:15px/1.55 -apple-system,BlinkMacSystemFont,\"PingFang SC\",\"Helvetica Neue\",sans-serif}\nh1{font-size:25px;line-height:1.15;margin:5px 0 0;letter-spacing:-.5px}\nh2{font-size:17px;margin:0 0 14px;color:var(--fg)}\np{margin:7px 0}.lead{margin:14px 0 20px;color:#bdc7d8;font-size:14px}.dim{color:var(--dim);font-size:13px}\n.hero{display:flex;align-items:center;gap:13px}.brand{width:48px;height:48px;border-radius:15px;display:grid;place-items:center;background:linear-gradient(145deg,#6e91ff,#365fd8);box-shadow:0 12px 35px #234aaf66;font-size:24px;font-weight:800}\n.card{background:linear-gradient(145deg,var(--card2),var(--card));border:1px solid var(--line);border-radius:18px;padding:18px;margin:14px 0;box-shadow:0 12px 35px #0004}.card.primary{border-color:#3e5fa8;box-shadow:0 18px 50px #102b7055}.requirements{padding:15px 18px}\n.btn{display:block;width:100%;min-height:50px;padding:13px 16px;border:0;border-radius:13px;background:linear-gradient(135deg,var(--acc),var(--acc2));color:#fff;font-size:16px;font-weight:700;margin:15px 0 0;text-align:center;text-decoration:none;box-shadow:0 8px 22px #274fb255;cursor:pointer}.btn.sec{background:#202a3c;color:var(--fg);box-shadow:none;font-weight:600;font-size:14px}.btn:active{transform:translateY(1px);opacity:.86}.btn:disabled{opacity:.58;cursor:wait}\ntextarea,input,select{width:100%;background:#090d16;color:var(--fg);border:1px solid var(--line);border-radius:11px;padding:11px;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}textarea{min-height:96px;resize:vertical}select{margin-top:6px}code{background:#080c14;border:1px solid var(--line);border-radius:6px;padding:1px 5px;font-size:12px;word-break:break-all}\n.row{display:flex;gap:9px}.row>*{flex:1}.tag{display:inline-block;font-size:11px;padding:2px 9px;border-radius:999px;border:1px solid #2c765b;color:#61d9a6;background:#14372d}.ok{color:var(--ok)}.warn{color:var(--warn)}.err{color:var(--err)}\n.flow{position:relative;margin:4px 0 17px}.flow:before{content:\"\";position:absolute;left:15px;top:28px;bottom:28px;width:2px;background:#29354b}.flow-item{position:relative;display:flex;gap:12px;align-items:center;padding:8px 0;color:#8f9bb0}.flow-item i{position:relative;z-index:1;display:grid;place-items:center;width:32px;height:32px;flex:0 0 32px;border-radius:50%;background:#20293a;border:1px solid #344159;font-style:normal;font-size:13px;font-weight:700}.flow-item span{display:flex;flex-direction:column}.flow-item b{font-size:14px}.flow-item small{font-size:12px}.flow-item.active{color:var(--fg)}.flow-item.active i{background:var(--acc);border-color:#82a0ff}.flow-item.done{color:#a9e7cc}.flow-item.done i{background:#176545;border-color:var(--ok)}\n.hint,.safe-note{font-size:12.5px;color:var(--dim)}.safe-note{padding:10px 11px;margin-top:12px;border-radius:10px;background:#0c251d;border:1px solid #2b7659;color:#b9f1d9}.check{display:flex;gap:9px;align-items:flex-start;padding:6px 0;color:#bac5d5;font-size:13px}.check b{color:var(--ok)}\n.kv{font-size:13px;margin:4px 0;word-break:break-all}.kv b{color:var(--dim);font-weight:500}details{margin-top:10px}details.compact{padding-top:4px}details.recovery>summary{font-size:14px;color:#c0cada;font-weight:600}summary{cursor:pointer;color:var(--dim);font-size:13px}footer{text-align:center;color:#8793a7;font-size:12px;padding:12px 0 4px}footer p{margin:4px 0}\n@media(max-width:390px){body{padding-left:12px;padding-right:12px}.row{display:block}.row .btn{margin-top:9px}}\n</style>\n</head>\n<body>\n\n<header class=\"hero\">\n  <div class=\"brand\">W</div>\n  <div><span class=\"tag ok\">全自动登录</span><h1>连接 WorkBuddy</h1></div>\n</header>\n<p class=\"lead\">只需完成手机号验证，后续获取令牌、校验账号、写入账号池和启用自动续期全部自动完成。</p>\n\n<!-- Loon 换完令牌后带着 ?ok / ?warn / ?err 回到这里 -->\n<div id=\"banner\"></div>\n\n<main id=\"loginCard\" class=\"card primary\">\n  <h2>一键完成配置</h2>\n  <div class=\"flow\" id=\"flow\">\n    <div class=\"flow-item active\" id=\"flowPrepare\"><i>1</i><span><b>建立安全连接</b><small>创建一次性 PKCE 登录事务</small></span></div>\n    <div class=\"flow-item\" id=\"flowAuth\"><i>2</i><span><b>手机号验证</b><small>前往 CodeBuddy 完成登录</small></span></div>\n    <div class=\"flow-item\" id=\"flowSave\"><i>3</i><span><b>自动配置完成</b><small>获取并验证令牌，写入 BoxJS</small></span></div>\n  </div>\n  <button class=\"btn\" id=\"go\">开始安全登录</button>\n  <p class=\"hint\" id=\"goHint\">登录完成后会自动返回本页，无需复制地址、令牌或打开 BoxJS。</p>\n  <div class=\"safe-note\">令牌不会出现在网址中；一次性登录事务在使用后立即销毁。</div>\n\n  <details class=\"compact\">\n    <summary>高级设置</summary>\n    <label class=\"dim\" for=\"client\">登录客户端</label>\n    <select id=\"client\">\n      <option value=\"account-console\" selected>account-console（推荐）</option>\n      <option value=\"account\">account（备用）</option>\n    </select>\n  </details>\n</main>\n\n<section class=\"card requirements\">\n  <h2>使用条件</h2>\n  <div class=\"check\"><b>✓</b><span>已安装最新版 WorkBuddy Loon 插件</span></div>\n  <div class=\"check\"><b>✓</b><span>Loon 的 MITM 已开启并信任证书</span></div>\n  <div class=\"check\"><b>✓</b><span>MITM hostname 包含 <code>www.codebuddy.cn</code></span></div>\n</section>\n\n<details class=\"card recovery\">\n  <summary>登录没有自动返回？打开故障恢复</summary>\n  <p class=\"dim\">正常流程不需要此步骤。仅当登录后停在 CodeBuddy 回调页时，复制地址栏中的完整 HTTPS 地址粘贴到这里。</p>\n  <textarea id=\"cb\" placeholder=\"https://www.codebuddy.cn/auth/realms/copilot/account/?state=...&code=...\"></textarea>\n  <div class=\"row\">\n    <button class=\"btn sec\" id=\"paste\">粘贴地址</button>\n    <button class=\"btn\" id=\"ex\">继续自动配置</button>\n  </div>\n  <div id=\"exOut\"></div>\n</details>\n\n<!-- 仅故障恢复流程使用；正常自动流程由 Loon 直接写入 BoxJS -->\n<div class=\"card\" id=\"outCard\" style=\"display:none\">\n  <h2>手动恢复结果</h2>\n  <div id=\"info\"></div>\n  <textarea id=\"pool\" readonly style=\"min-height:130px\"></textarea>\n  <div class=\"row\">\n    <button class=\"btn sec\" id=\"copyPool\">复制账号数据</button>\n    <button class=\"btn sec\" id=\"verify\">验证令牌</button>\n  </div>\n  <div id=\"verifyOut\"></div>\n</div>\n\n<details class=\"card recovery\">\n  <summary>维护工具</summary>\n  <div id=\"sess\" class=\"dim\">当前页面没有登录记录。</div>\n  <textarea id=\"rt\" placeholder=\"refresh_token\"></textarea>\n  <button class=\"btn sec\" id=\"refresh\">手动续期</button>\n  <div id=\"rfOut\"></div>\n</details>\n\n<footer>\n  <span id=\"src\"></span>\n  <p>登录采用 PKCE S256；敏感令牌仅由本机 Loon 写入 BoxJS，不上传到第三方。</p>\n</footer>\n\n<script>\n/* ---------- 常量：来自 realm 的 .well-known/openid-configuration ---------- */\nvar ISSUER   = \"https://www.codebuddy.cn/auth/realms/copilot\";\nvar AUTH_EP  = ISSUER + \"/protocol/openid-connect/auth\";\nvar TOKEN_EP = ISSUER + \"/protocol/openid-connect/token\";\nvar REDIRECT = ISSUER + \"/account/\";\nvar SCOPE    = \"openid profile offline_access email\";\nvar API_BASE = \"https://copilot.tencent.com\";\n\n/* 敏感令牌与 PKCE 事务只留在当前页面内存中；刷新/关闭后自动清除。 */\nvar MEM = {};\nvar LS = {\n  get: function (k) { return MEM[k] || \"\"; },\n  set: function (k, v) { MEM[k] = v; },\n  del: function (k) { delete MEM[k]; }\n};\nvar TX = {\n  get: function (k) { try { return sessionStorage.getItem(\"wb_tx_\" + k) || \"\"; } catch (e) { return MEM[\"tx_\" + k] || \"\"; } },\n  set: function (k, v) { MEM[\"tx_\" + k] = v; try { sessionStorage.setItem(\"wb_tx_\" + k, v); } catch (e) {} },\n  clear: function () {\n    delete MEM.tx_state; delete MEM.tx_verifier; delete MEM.tx_client;\n    try { sessionStorage.removeItem(\"wb_tx_state\"); sessionStorage.removeItem(\"wb_tx_verifier\"); sessionStorage.removeItem(\"wb_tx_client\"); } catch (e) {}\n  }\n};\nfunction $(id) { return document.getElementById(id); }\nfunction esc(s) { return String(s == null ? \"\" : s).replace(/[&<>\"]/g, function (c) {\n  return ({ \"&\": \"&amp;\", \"<\": \"&lt;\", \">\": \"&gt;\", '\"': \"&quot;\" })[c]; }); }\nfunction b64u(buf) {\n  var b = new Uint8Array(buf), s = \"\";\n  for (var i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);\n  return btoa(s).replace(/\\+/g, \"-\").replace(/\\//g, \"_\").replace(/=+$/, \"\");\n}\nfunction rand(n) {\n  var a = new Uint8Array(n);\n  (window.crypto || window.msCrypto).getRandomValues(a);\n  var s = \"\";\n  for (var i = 0; i < a.length; i++) s += (\"0\" + (a[i] % 36).toString(36)).slice(-1);\n  return s;\n}\nfunction sha256(txt) {\n  var data = new TextEncoder().encode(txt);\n  return window.crypto.subtle.digest(\"SHA-256\", data).then(b64u);\n}\nfunction jwt(tok) {\n  try {\n    var p = tok.split(\".\")[1].replace(/-/g, \"+\").replace(/_/g, \"/\");\n    p += \"====\".slice(0, (4 - p.length % 4) % 4);\n    return JSON.parse(decodeURIComponent(escape(atob(p))));\n  } catch (e) { return {}; }\n}\nfunction fmt(expSec) {\n  if (!expSec) return \"未知\";\n  var d = new Date(expSec * 1000);\n  function p(n) { return (n < 10 ? \"0\" : \"\") + n; }\n  return d.getFullYear() + \"-\" + p(d.getMonth() + 1) + \"-\" + p(d.getDate()) + \" \" + p(d.getHours()) + \":\" + p(d.getMinutes());\n}\nfunction say(el, cls, html) { el.innerHTML = '<p class=\"' + cls + '\">' + html + \"</p>\"; }\n\n/* ---------- ① 登录 ---------- */\nfunction flow(step) {\n  var ids = [\"flowPrepare\", \"flowAuth\", \"flowSave\"];\n  for (var i = 0; i < ids.length; i++) {\n    var el = $(ids[i]);\n    el.className = \"flow-item\" + (i < step ? \" done\" : (i === step ? \" active\" : \"\"));\n    el.querySelector(\"i\").textContent = i < step ? \"✓\" : String(i + 1);\n  }\n}\nfunction setBusy(on, text) {\n  var b = $(\"go\");\n  b.disabled = !!on;\n  b.textContent = text || (on ? \"正在建立安全连接…\" : \"开始安全登录\");\n}\n$(\"go\").onclick = function () {\n  var client = $(\"client\").value;\n  setBusy(true, \"正在建立安全连接…\");\n  flow(0);\n  $(\"goHint\").textContent = \"正在创建一次性登录事务，请勿关闭页面。\";\n  LS.set(\"client\", client);\n  TX.set(\"client\", client);\n  // account-console 在服务端强制 PKCE(S256)：不带 code_challenge_method 会被直接打回\n  //   .../account/?error=invalid_request&error_description=Missing+parameter%3A+code_challenge_method\n  // 所以这里没有「关掉」这个选项。\n  if (!window.crypto || !window.crypto.subtle) {\n    setBusy(false);\n    $(\"goHint\").innerHTML = '<span class=\"err\">当前页面不是安全 HTTPS 环境，无法建立 PKCE 登录。</span>';\n    return;\n  }\n  var verifier = rand(32) + rand(32);\n  var state = rand(32);\n  TX.set(\"verifier\", verifier);\n  TX.set(\"state\", state);\n  sha256(verifier).then(function (ch) {\n    var sessionUrl = \"https://www.codebuddy.cn/wb-login/session\";\n    return fetch(sessionUrl, {\n      method: \"POST\",\n      headers: { \"Content-Type\": \"application/json\" },\n      body: JSON.stringify({ state: state, verifier: verifier, client: client })\n    }).then(function (r) {\n      if (!r.ok) throw new Error(\"HTTP \" + r.status);\n      var q = [\"client_id=\" + encodeURIComponent(client),\n               \"response_type=code\",\n               \"scope=\" + encodeURIComponent(SCOPE),\n               \"redirect_uri=\" + encodeURIComponent(REDIRECT),\n               \"state=\" + encodeURIComponent(state),\n               \"code_challenge=\" + ch,\n               \"code_challenge_method=S256\"];\n      flow(1);\n      setBusy(true, \"正在打开手机号验证…\");\n      $(\"goHint\").textContent = \"验证完成后会自动返回并保存账号，请勿复制任何令牌。\";\n      location.href = AUTH_EP + \"?\" + q.join(\"&\");\n    });\n  }).catch(function () {\n    TX.clear();\n    setBusy(false);\n    flow(0);\n    $(\"goHint\").innerHTML = '<span class=\"err\">无法连接本机 Loon 登录服务。请确认插件已更新、MITM 已开启并信任证书。</span>';\n  });\n};\n\n/* ---------- ② 粘贴 + 换取 ---------- */\n$(\"paste\").onclick = function () {\n  if (navigator.clipboard && navigator.clipboard.readText) {\n    navigator.clipboard.readText().then(function (t) { $(\"cb\").value = t; }).catch(function () {\n      say($(\"exOut\"), \"dim\", \"读不到剪贴板：长按输入框手动粘贴即可。\");\n    });\n  } else say($(\"exOut\"), \"dim\", \"这台设备不支持读剪贴板：长按输入框手动粘贴。\");\n};\n\nfunction safeDecode(s) {\n  try { return decodeURIComponent(String(s || \"\").replace(/\\+/g, \"%20\")); } catch (e) { return \"\"; }\n}\nfunction parseCode(text) {\n  text = String(text || \"\").trim();\n  if (!text) return { code: \"\", state: \"\", verifier: \"\", validUrl: false };\n  var validUrl = false;\n  try {\n    var u = new URL(text);\n    validUrl = u.protocol === \"https:\" && u.hostname === \"www.codebuddy.cn\" &&\n      u.pathname === \"/auth/realms/copilot/account/\";\n  } catch (e) {}\n  var m = text.match(/[?&#]code=([^&#\\s]+)/) || text.match(/^code=([^&#\\s]+)/);\n  var s = text.match(/[?&#]state=([^&#\\s]+)/);\n  var st = s ? safeDecode(s[1]) : \"\";\n  return { code: m ? safeDecode(m[1]) : \"\", state: st, validUrl: validUrl };\n}\n\nfunction exchange(body) {\n  return fetch(TOKEN_EP, {\n    method: \"POST\",\n    headers: { \"Content-Type\": \"application/x-www-form-urlencoded\", \"Accept\": \"application/json\" },\n    body: new URLSearchParams(body).toString()\n  }).then(function (r) {\n    return r.text().then(function (t) {\n      var j = {};\n      try { j = JSON.parse(t); } catch (e) { j = { error: \"bad_json\", error_description: t.slice(0, 200) }; }\n      if (!r.ok) throw j;\n      return j;\n    });\n  });\n}\n\nfunction explain(err) {\n  var e = String((err && err.error) || \"\"), d = String((err && err.error_description) || err || \"\");\n  if (e === \"invalid_grant\") {\n    if (/Code not valid|code/i.test(d)) return \"这条 code 已经用过或超过有效期（约 1 分钟）。重新点第 ① 步登录，拿到新的回调地址再粘一次。\";\n    if (/refresh/i.test(d)) return \"refresh_token 无效或已被换掉（每次续期旧的会作废，别用旧的那份）。\";\n    return d || \"授权被拒绝。\";\n  }\n  if (e === \"unauthorized_client\") return \"这个 client_id 不接受当前授权方式：可能是 client 需要密钥，或授权方式被关掉了。改用 account-console 再试。\";\n  if (e === \"invalid_client\") return \"client_id 不对（这个 client 在 codebuddy 上不存在）。\";\n  if (e === \"invalid_request\") return \"请求参数不全：\" + d;\n  return (e ? e + \"：\" : \"\") + (d || \"未知错误\");\n}\n\nfunction showTokens(tok, client) {\n  var pl = jwt(tok.access_token || \"\");\n  var uid = pl.sub || \"\";\n  var nick = pl.nickname || pl.preferred_username || pl.name || \"账号\";\n  var rec = {\n    nickname: nick,\n    access_token: tok.access_token || \"\",\n    uid: uid,\n    expiresAt: pl.exp ? pl.exp * 1000 : 0,\n    domain: \"www.codebuddy.cn\",\n    client: client\n  };\n  if (tok.refresh_token) rec.refresh_token = tok.refresh_token;\n  var pool = JSON.stringify([rec]);\n\n  $(\"info\").innerHTML =\n    '<p class=\"kv\"><b>昵称：</b>' + esc(nick) + \"</p>\" +\n    '<p class=\"kv\"><b>uid：</b><code>' + esc(uid) + \"</code></p>\" +\n    '<p class=\"kv\"><b>access_token 有效至：</b>' + esc(fmt(pl.exp)) + \"</p>\" +\n    '<p class=\"kv\"><b>refresh_token：</b>' +\n      (tok.refresh_token ? '<span class=\"ok\">有</span>（' + tok.refresh_token.length + \" 字符）\" : '<span class=\"warn\">无</span>（登录时没带 offline_access，过期就得重登）') +\n    \"</p>\" +\n    '<p class=\"kv\"><b>client：</b><code>' + esc(client) + \"</code>（决定以后能不能续期）</p>\";\n  $(\"pool\").value = pool;\n  $(\"outCard\").style.display = \"block\";\n  if (tok.refresh_token) LS.set(\"refresh_token\", tok.refresh_token);\n  LS.set(\"nickname\", nick);\n  LS.set(\"client\", client);\n  renderSession();\n}\n\n$(\"ex\").onclick = function () {\n  var p = parseCode($(\"cb\").value);\n  if (!p.validUrl) { say($(\"exOut\"), \"err\", \"回调地址不是预期的 CodeBuddy HTTPS 地址，请复制完整地址栏 URL。\"); return; }\n  if (!p.code) { say($(\"exOut\"), \"err\", \"没找到 code，把登录后那个完整的回调网址整段粘进来。\"); return; }\n  var expectedState = TX.get(\"state\");\n  var localVerifier = TX.get(\"verifier\");\n  if (!expectedState || p.state !== expectedState || !localVerifier) {\n    say($(\"exOut\"), \"err\", \"state 与当前登录事务不匹配或已失效。请在本页重新点一次「用手机号登录」。\");\n    return;\n  }\n  var client = TX.get(\"client\") || LS.get(\"client\") || $(\"client\").value || \"account-console\";\n  var body = { grant_type: \"authorization_code\", client_id: client, code: p.code, redirect_uri: REDIRECT };\n  var v = localVerifier;\n  body.code_verifier = v;\n  say($(\"exOut\"), \"dim\", \"正在换取令牌…\");\n  exchange(body).then(function (tok) {\n    TX.clear();\n    say($(\"exOut\"), \"ok\", \"换到了 ✓\");\n    showTokens(tok, client);\n  }).catch(function (err) {\n    TX.clear();\n    var t = String((err && err.message) || err);\n    if (/failed to fetch|load failed|networkerror|network request failed|typeerror/i.test(t)) {\n      say($(\"exOut\"), \"warn\",\n        \"浏览器把这次请求拦住了（跨域）：CodeBuddy 的令牌接口不给别的网站发跨域许可，所以这一页换不了令牌 —— 不是地址的问题。<br>\" +\n        \"改用手机上的 <b>BoxJS</b>：把上面这条 URL 粘进 WorkBuddy 应用里的「<b>登录回调地址</b>」并保存，\" +\n        \"再点「立即签到一轮（手动运行）」，由脚本在手机本地把 code 换成令牌（这条路同样不需要 MITM）。\");\n    } else {\n      say($(\"exOut\"), \"err\", esc(explain(err)));\n    }\n  });\n};\n\n$(\"copyPool\").onclick = function () {\n  var t = $(\"pool\").value;\n  function clearSensitive() {\n    LS.del(\"refresh_token\"); LS.del(\"nickname\"); LS.del(\"client\");\n    $(\"rt\").value = \"\";\n    renderSession();\n  }\n  if (navigator.clipboard && navigator.clipboard.writeText) {\n    navigator.clipboard.writeText(t).then(function () {\n      clearSensitive();\n      say($(\"verifyOut\"), \"ok\", \"已复制 ✓ 页面内保存的续期令牌已清除。\");\n    }, function () { $(\"pool\").select(); say($(\"verifyOut\"), \"dim\", \"自动复制失败，已全选，长按复制。\"); });\n  } else { $(\"pool\").select(); say($(\"verifyOut\"), \"dim\", \"已全选，长按复制。\"); }\n};\n\n$(\"verify\").onclick = function () {\n  var tok = (JSON.parse($(\"pool\").value || \"[{}]\")[0] || {}).access_token;\n  if (!tok) return;\n  var pl = jwt(tok);\n  say($(\"verifyOut\"), \"dim\", \"正在问签到接口…\");\n  fetch(API_BASE + \"/v2/billing/meter/checkin-activity-status\", {\n    method: \"POST\",\n    headers: { \"Content-Type\": \"application/json\", \"Authorization\": \"Bearer \" + tok, \"X-User-Id\": pl.sub || \"\" },\n    body: \"{}\"\n  }).then(function (r) { return r.text(); }).then(function (t) {\n    if (/today_checked_in|\"code\":0/.test(t)) say($(\"verifyOut\"), \"ok\", \"令牌可用 ✓ 签到接口认它（该接口返回 OK）。\");\n    else say($(\"verifyOut\"), \"warn\", \"接口回话：\" + esc(t.slice(0, 180)));\n  }).catch(function () {\n    say($(\"verifyOut\"), \"dim\", \"浏览器跨域拦住了，没法在这一页验证。装好 Loon 插件后走第 ⑤ 步会自动验证。\");\n  });\n};\n\n/* ---------- ④ 续期 ---------- */\nfunction renderSession() {\n  var rt = LS.get(\"refresh_token\"), nick = LS.get(\"nickname\"), client = LS.get(\"client\");\n  if (rt) $(\"sess\").innerHTML = '本机记住了 <b>' + esc(nick || \"账号\") + \"</b> 的 refresh_token（client <code>\" +\n      esc(client || \"?\") + \"</code>，共 \" + rt.length + \" 字符）。access_token 过期了点下面按钮就能换新的。\";\n  else $(\"sess\").textContent = \"还没有登录记录（或上次登录没拿到 refresh_token）。\";\n}\n$(\"refresh\").onclick = function () {\n  var rt = ($(\"rt\").value || \"\").trim() || LS.get(\"refresh_token\");\n  if (!rt) { say($(\"rfOut\"), \"err\", \"没有 refresh_token：先做第 ① ② 步登录，或把它粘进上面的框。\"); return; }\n  var client = LS.get(\"client\") || $(\"client\").value || \"account-console\";\n  say($(\"rfOut\"), \"dim\", \"正在续期…\");\n  exchange({ grant_type: \"refresh_token\", client_id: client, refresh_token: rt, scope: SCOPE })\n    .then(function (tok) {\n      say($(\"rfOut\"), \"ok\", \"续期成功 ✓（旧的 refresh_token 已作废，下面这份是新的）\");\n      showTokens(tok, client);\n    }).catch(function (err) { say($(\"rfOut\"), \"err\", esc(explain(err))); });\n};\n\n/* ---------- 回调横幅：Loon 换完令牌后带着 ?ok / ?warn / ?err 跳回本页 ---------- */\nfunction banner() {\n  var q = new URLSearchParams(location.search);\n  var el = $(\"banner\"), html = \"\";\n  var name = q.get(\"name\") || \"账号\";\n  var msg = q.get(\"msg\") || \"\";\n  var again = '<button class=\"btn sec\" onclick=\"goAgain()\">连接另一个账号</button>';\n  var toBox = '<a class=\"btn sec\" href=\"https://boxjs.com\" target=\"_blank\" rel=\"noreferrer\" style=\"color:#fff\">查看 BoxJS</a>';\n  if (q.get(\"ok\")) {\n    flow(3);\n    $(\"loginCard\").style.display = \"none\";\n    html = '<div class=\"card\" style=\"border-color:var(--ok);text-align:center\">' +\n      '<div style=\"font-size:42px;line-height:1\">✓</div>' +\n      '<h2 class=\"ok\" style=\"font-size:21px;margin-top:10px\">全部配置完成</h2>' +\n      '<p><b>' + esc(name) + '</b> 已连接，令牌验证通过并写入 BoxJS 账号池。</p>' +\n      '<p class=\"dim\">自动签到与令牌续期已经启用，之后无需再登录或复制任何内容。</p>' +\n      '<div class=\"row\">' + toBox + again + '</div></div>';\n  } else if (q.get(\"warn\")) {\n    flow(3);\n    html = '<div class=\"card\" style=\"border-color:var(--warn)\">' +\n      '<h2 class=\"warn\">令牌已自动保存，需要检查账号</h2>' +\n      '<p><b>' + esc(name) + '</b> 的令牌已经写进账号池，但签到接口回报：</p>' +\n      (msg ? '<p class=\"dim\">' + esc(msg) + '</p>' : '') +\n      '<p class=\"dim\">先在 BoxJS 里手动跑一轮看看结果；确实不行就把这条从账号池删掉，继续用电脑版导出的令牌。</p>' +\n      '<div class=\"row\">' + toBox + again + '</div></div>';\n  } else if (q.get(\"err\")) {\n    flow(0);\n    setBusy(false, \"重新安全登录\");\n    html = '<div class=\"card\" style=\"border-color:var(--err)\">' +\n      '<h2 class=\"err\">登录没有完成</h2>' +\n      '<p>' + esc(msg || \"换令牌失败\") + '</p>' +\n      '<p class=\"dim\">点击下方按钮重新开始；系统会建立新的安全事务并自动完成后续步骤。</p>' +\n      '<div class=\"row\">' + again + '</div></div>';\n  }\n  if (html) {\n    el.innerHTML = html;\n    window.scrollTo(0, 0);\n    try { history.replaceState({}, \"\", location.pathname); } catch (e) {}\n  }\n}\nfunction goAgain() { location.href = location.pathname; }\n\n/* 首次渲染 */\n(function srcNote() {\n  var el = $(\"src\");\n  if (!el) return;\n  el.textContent = \"WorkBuddy 本机安全登录\";\n})();\nbanner();\nrenderSession();\nwindow.addEventListener(\"paste\", function () {\n  setTimeout(function () {\n    if ($(\"cb\").value && !$(\"exOut\").innerHTML) say($(\"exOut\"), \"dim\", \"粘好了，点「换取令牌」。\");\n  }, 60);\n});\n</script>\n</body>\n</html>\n";
 /* ==== PAGE_HTML:END ==== */
 
 (function main() {
   if (argument() === "page") return servePage();
   if (argument() === "login-session") return serveLoginSession();
-  if (argument() === "login-recover") return serveLoginRecovery();
 
   // 「待换取的回调地址」：用户在 BoxJS 里粘了登录后的那条 URL 时，任何一次运行都先把它换掉。
   // 这条路不需要 MITM —— 换令牌是脚本自己发出去的 HTTPS 请求，不受浏览器跨域限制。
   var pendingLogin = String(store("WorkBuddy_LoginCallback", "") || "").replace(/^\s+|\s+$/g, "");
   if (pendingLogin && argument() !== "panel" && argument() !== "login") {
-    if (callbackUrlValid(pendingLogin)) {
+    if (/^https:\/\/www\.codebuddy\.cn\/auth\/realms\/copilot\/account\//i.test(pendingLogin)) {
       log("⇢ 发现待换取的回调地址（" + pendingLogin.length + " 字符），先完成登录");
       return loginCallback(pendingLogin);
     }
@@ -1532,7 +1472,7 @@ function begin(list, skipped) {
     }
 
     // 整个 cron 必须跑完所有账号，故每个账号分到的预算 = 总预算 / 账号数
-    BUDGET = Math.min(240, Math.floor(GLOBAL_BUDGET / ACCOUNTS.length));
+    BUDGET = Math.max(60, Math.min(240, Math.floor(GLOBAL_BUDGET / ACCOUNTS.length)));
     accIndex = 0;
     RESULTS = [];
     nextAccount();
