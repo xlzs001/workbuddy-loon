@@ -37,39 +37,41 @@
 # ⓪ 手机登录页：打开 https://www.codebuddy.cn/wb-login 时，由脚本直接吐出登录页 HTML。
 #    页面挂在 codebuddy 域名下、走本插件已开启的 MITM，所以不依赖 GitHub Pages / jsDelivr，
 #    手机上只要 Loon 通就一定打得开。（需要 [MITM] 的 hostname 含 www.codebuddy.cn）
-http-request ^https:\/\/www\.codebuddy\.cn\/wb-login(?:\?.*)?$ script-path=https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.2.0/workbuddy.js, requires-body=false, tag=WorkBuddy登录页, timeout=10, argument=page
+http-request ^https:\/\/www\.codebuddy\.cn\/wb-login(?:\?.*)?$ script-path=https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.2.1/workbuddy.js, requires-body=false, tag=WorkBuddy登录页, timeout=10, argument=page
 # ⓪-B 建立一次性登录事务：浏览器 POST state/verifier，脚本只保留 10 分钟并在回调时消费。
-http-request ^https:\/\/www\.codebuddy\.cn\/wb-login\/session$ script-path=https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.2.0/workbuddy.js, requires-body=true, tag=WorkBuddy登录事务, timeout=10, argument=login-session, binary-mode=false
+http-request ^https:\/\/www\.codebuddy\.cn\/wb-login\/session$ script-path=https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.2.1/workbuddy.js, requires-body=true, tag=WorkBuddy登录事务, timeout=10, argument=login-session, binary-mode=false
 
-# ① 手机登录回调：在登录页登完，浏览器跳回
-#    https://www.codebuddy.cn/auth/realms/copilot/account/?...&code=xxxx
-#    时由脚本在手机本地把 code 换成令牌（公开客户端 account-console），验证可用后
+# ⓪-C 页面故障恢复：把完整回调地址 POST 到本机脚本，由 Loon 换令牌并直接写 BoxJS。
+http-request ^https:\/\/www\.codebuddy\.cn\/wb-login\/recover$ script-path=https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.2.1/workbuddy.js, requires-body=true, tag=WorkBuddy登录恢复, timeout=30, argument=login-recover, binary-mode=false
+
+# ① 手机登录回调：兼容 /account 和 /account/ 两种路径；浏览器跳回时
+#    由脚本在手机本地把 code 换成令牌（公开客户端 account-console），验证可用后
 #    写入 BoxJS 账号池，并弹一条通知。code 只能用一次且约 1 分钟过期。
 #    ⚠ 这条规则必须覆盖整个 /account/ 前缀（不只是带 code= 的那种）：codebuddy 的网关
 #      对 /account/** 做了来源限制，非白名单 IP 会直接回
 #      403 {"message":"Your IP address is not allowed"}。带 ?error=... 但没有 code= 的
 #      失败回调如果不拦，手机上就会看到那段看不懂的 JSON。
-http-request ^https:\/\/www\.codebuddy\.cn\/auth\/realms\/copilot\/account\/(?:\?.*)?$ script-path=https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.2.0/workbuddy.js, requires-body=false, tag=WorkBuddy手机登录, timeout=30, argument=login
+http-request ^https:\/\/www\.codebuddy\.cn\/auth\/realms\/copilot\/account\/?(?:\?.*)?$ script-path=https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.2.1/workbuddy.js, requires-body=false, tag=WorkBuddy手机登录, timeout=30, argument=login
 
 # ② 令牌保鲜：手机端只要有带 Authorization 的请求打到 copilot.tencent.com，
 #    就自动把最新令牌写回 BoxJS，避免手动反复导出。
-http-request ^https?:\/\/copilot\.tencent\.com\/v2\/ script-path=https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.2.0/workbuddy.js, requires-body=false, tag=WorkBuddy令牌保鲜, timeout=10
+http-request ^https?:\/\/copilot\.tencent\.com\/v2\/ script-path=https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.2.1/workbuddy.js, requires-body=false, tag=WorkBuddy令牌保鲜, timeout=10
 
 # ③ 每日签到 + 成长中心（每天 00:05）
-cron "5 0 * * *" script-path=https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.2.0/workbuddy.js, tag=WorkBuddy每日签到, timeout=600, argument=auto
+cron "5 0 * * *" script-path=https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.2.1/workbuddy.js, tag=WorkBuddy每日签到, timeout=600, argument=auto
 
 # ④ 成长中心轮询（每 4 小时）：先补签（未签才签），再跑成长中心
 #    Buddy 旅行 1~4 小时就带回礼物，只在 00:05 跑一次礼物会压到第二天；
 #    这一轮同时兜住「00:05 没开机 / 没网」导致的断签。
-cron "0 */4 * * *" script-path=https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.2.0/workbuddy.js, tag=WorkBuddy成长轮询, timeout=600, argument=poll
+cron "0 */4 * * *" script-path=https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.2.1/workbuddy.js, tag=WorkBuddy成长轮询, timeout=600, argument=poll
 
 # ⑤ 手动执行入口：装好后在 Loon 里（插件详情页 / 脚本列表）会多出一个可点的
 #    「WorkBuddy 手动签到」，点一下立刻跑一轮，不用等到 00:05。
-generic script-path=https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.2.0/workbuddy.js, argument=auto, tag=WorkBuddy手动签到, timeout=600
+generic script-path=https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.2.1/workbuddy.js, argument=auto, tag=WorkBuddy手动签到, timeout=600
 
 # ⑥ 可选：Loon 卡片面板（Loon 版本较新才支持 [Panel]，不支持就直接删掉）
 [Panel]
-WorkBuddy = script-path=https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.2.0/workbuddy.js, argument=panel, title=WorkBuddy, interval=1800, timeout=30
+WorkBuddy = script-path=https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.2.1/workbuddy.js, argument=panel, title=WorkBuddy, interval=1800, timeout=30
 
 [MITM]
 hostname = %APPEND% copilot.tencent.com, www.codebuddy.cn
