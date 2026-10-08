@@ -53,7 +53,10 @@ function runCase(name, opts) {
     console: { log: () => {} },
     $persistentStore: {
       read: (k) => (store[k] === undefined ? null : store[k]),
-      write: (v, k) => { store[k] = String(v); return true; }
+      write: (v, k) => {
+        if (opts.storageFails && k === "WorkBuddy_Accounts") return false;
+        store[k] = String(v); return true;
+      }
     },
     $notify: (t, s, b) => notified.push({ t, s, b }),
     $done: (a) => { doneArgs.push(a); },
@@ -74,6 +77,7 @@ function runCase(name, opts) {
 }
 
 const API_OK = () => ({ status: 200, data: { code: 0, active: true, today_checked_in: true, today_credit: 5, streak_days: 4 } });
+const API_OK_NO_CODE = () => ({ status: 200, data: { active: true, today_checked_in: true, today_credit: 5 } });
 const pool = (store) => JSON.parse(store["WorkBuddy_Accounts"] || "[]");
 const q = (body) => String(body || "").split("&").reduce((a, kv) => {
   const i = kv.indexOf("="); if (i > 0) a[decodeURIComponent(kv.slice(0, i))] = decodeURIComponent(kv.slice(i + 1)); return a;
@@ -109,6 +113,25 @@ ok("跳回地址带 ok=1 和昵称",
   !!d1 && /wb-login\?ok=1&name=/.test(d1.response.headers.Location) &&
   d1.response.headers.Location.indexOf(encodeURIComponent("手机号账号")) > 0,
   d1 && d1.response.headers.Location);
+
+/* ---------- 场景 1-B：成功响应不带业务 code 仍可验证 ---------- */
+const r1b = runCase("场景 1-B：验证响应无 code 仍识别为成功", {
+  argument: "login",
+  request: { url: "https://www.codebuddy.cn/auth/realms/copilot/account/?state=state-1b&code=code-1b" },
+  token: () => ({ status: 200, data: { access_token: jwt("uid-1b", "无业务码账号", Math.floor((Date.now() + 40 * DAY) / 1000)) } }),
+  api: API_OK_NO_CODE
+});
+ok("HTTP 2xx 且含状态字段时无需 code=0", r1b.notified[0] && r1b.notified[0].t === "WorkBuddy 登录成功", r1b.notified);
+
+/* ---------- 场景 1-C：账号池写入失败不得误报成功 ---------- */
+const r1c = runCase("场景 1-C：账号池写入失败", {
+  argument: "login", storageFails: true,
+  request: { url: "https://www.codebuddy.cn/auth/realms/copilot/account/?state=state-1c&code=code-1c" },
+  token: () => ({ status: 200, data: { access_token: jwt("uid-1c", "写入失败账号", Math.floor((Date.now() + 40 * DAY) / 1000)) } }),
+  api: API_OK
+});
+ok("存储失败不通知登录成功", r1c.notified[0] && r1c.notified[0].t === "WorkBuddy 登录失败" && /写入失败/.test(r1c.notified[0].s), r1c.notified);
+ok("存储失败返回错误页", /wb-login\?err=/.test((r1c.doneArgs.filter((a) => a && a.response).pop() || {response:{headers:{}}}).response.headers.Location || ""), r1c.doneArgs);
 
 /* ---------- 场景 2：换令牌失败 ---------- */
 const r2 = runCase("场景 2：code 已失效（invalid_grant），不写账号池", {
