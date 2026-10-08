@@ -114,6 +114,27 @@ const taskAccept500 = execute({
 ok("接任务 HTTP 500 使最终结果为 ERROR", taskAccept500.last && taskAccept500.last.result === "ERROR", taskAccept500.last);
 ok("接任务 HTTP 500 出现在报告并计入失败", /接任务失败：busy/.test(taskAccept500.last.report) && taskAccept500.last.failures === 1, taskAccept500.last);
 
+console.log("\n=== 成长中心业务失败不得误报成功 ===");
+const lotteryBizFail = execute({
+  store: {
+    WorkBuddy_Token: "tok_0123456789abcdefghijklmnopqrstuvwxyz",
+    WorkBuddy_Uid: "uid-1", WorkBuddy_EnableGrowth: "1",
+    WorkBuddy_EnableBuddyOpen: "0", WorkBuddy_Notify: "0"
+  },
+  route(method, url) {
+    if (/checkin-activity-status$/.test(url)) return { status: 200, data: { active: true, today_checked_in: true } };
+    if (/buddy\/travel\/status$/.test(url)) return { status: 200, data: { state: "traveling" } };
+    if (/growth\/tasks$/.test(url)) return { status: 200, data: { tasks: [] } };
+    if (/growth\/streak$/.test(url)) return { status: 200, data: { makeup_cards: 0 } };
+    if (/redeem\/summary$/.test(url)) return { status: 200, data: {} };
+    if (/lottery\/chances$/.test(url)) return { status: 200, data: { balance: 1 } };
+    if (/lottery\/draw$/.test(url)) return { status: 200, data: { code: 123, msg: "业务拒绝" } };
+    return { status: 200, data: {} };
+  }
+});
+ok("抽奖 HTTP 200 + 非零业务码结果为 ERROR", lotteryBizFail.last && lotteryBizFail.last.result === "ERROR", lotteryBizFail.last);
+ok("业务失败不增加成功数", lotteryBizFail.last && lotteryBizFail.last.accounts[0].ok === 0 && lotteryBizFail.last.failures === 1, lotteryBizFail.last);
+
 console.log("\n=== 登录回调来源与一次性事务 ===");
 const badCallback = execute({
   argument: "login",
@@ -141,6 +162,52 @@ const session = execute({
 });
 ok("合法登录事务写入存储", JSON.parse(session.data.WorkBuddy_LoginTransaction).state === state, session.data);
 ok("登录事务接口返回 204", session.done[0] && session.done[0].response.status === 204, session.done);
+
+console.log("\n=== 无尾斜杠回调与页面恢复自动写入 ===");
+const tokenBody = Buffer.from(JSON.stringify({ sub: "uid-recover", nickname: "恢复账号", exp: Math.floor(Date.now() / 1000) + 86400 }))
+  .toString("base64url");
+const accessToken = "eyJhbGciOiJub25lIn0." + tokenBody + ".sig";
+function loginRoute(method, url) {
+  if (/openid-connect\/token$/.test(url)) return { status: 200, data: { access_token: accessToken, refresh_token: "rt-recover" } };
+  if (/checkin-activity-status$/.test(url)) return { status: 200, data: { code: 0 } };
+  throw new Error("unexpected request: " + url);
+}
+function freshTx() { return { WorkBuddy_LoginTransaction: JSON.stringify({ state, verifier, client: "account-console", createdAt: Date.now() }) }; }
+const noSlash = execute({
+  argument: "login", store: freshTx(),
+  request: { url: "https://www.codebuddy.cn/auth/realms/copilot/account?state=" + state + "&code=once", method: "GET", headers: {} },
+  route: loginRoute
+});
+ok("无尾斜杠的自动回调换令牌并写账号池", noSlash.calls.length === 2 &&
+  JSON.parse(noSlash.data.WorkBuddy_Accounts || "[]")[0].uid === "uid-recover", noSlash.data);
+ok("自动回调仍 302 返回登录页", noSlash.done[0] && noSlash.done[0].response.status === 302, noSlash.done);
+const recovered = execute({
+  argument: "login-recover", store: freshTx(),
+  request: { url: "https://www.codebuddy.cn/wb-login/recover", method: "POST", headers: {},
+    body: JSON.stringify({ callback: "https://www.codebuddy.cn/auth/realms/copilot/account?code=once&state=" + state }) },
+  route: loginRoute
+});
+const recoveryResult = recovered.done[0] && recovered.done[0].response;
+ok("恢复入口用 Loon 写入 BoxJS 而非让浏览器保存", recovered.calls.length === 2 &&
+  JSON.parse(recovered.data.WorkBuddy_Accounts || "[]")[0].uid === "uid-recover", recovered.data);
+ok("恢复入口返回 JSON 成功结果、不向回调地址重定向", recoveryResult && recoveryResult.status === 200 &&
+  JSON.parse(recoveryResult.body).kind === "ok" && !recoveryResult.headers.Location, recoveryResult);
+const badRecovery = execute({
+  argument: "login-recover", store: freshTx(),
+  request: { url: "https://www.codebuddy.cn/wb-login/recover", method: "POST", headers: {},
+    body: JSON.stringify({ callback: "https://www.codebuddy.cn/auth/realms/copilot/account-evil?state=" + state + "&code=once" }) },
+  route() { throw new Error("非法回调不得换令牌"); }
+});
+ok("相似但非法的回调路径仍被拒绝", badRecovery.calls.length === 0 &&
+  JSON.parse(badRecovery.done[0].response.body).kind === "err", badRecovery.done);
+const mismatchedRecovery = execute({
+  argument: "login-recover", store: freshTx(),
+  request: { url: "https://www.codebuddy.cn/wb-login/recover", method: "POST", headers: {},
+    body: JSON.stringify({ callback: "https://www.codebuddy.cn/auth/realms/copilot/account?state=wrong&code=once" }) },
+  route() { throw new Error("state 不匹配不得换令牌"); }
+});
+ok("恢复入口仍校验 state", mismatchedRecovery.calls.length === 0 &&
+  JSON.parse(mismatchedRecovery.done[0].response.body).kind === "err", mismatchedRecovery.done);
 
 console.log("\n" + (fails ? "✗ " + fails + " 个断言失败" : "✓ 全部断言通过"));
 process.exit(fails ? 1 : 0);
