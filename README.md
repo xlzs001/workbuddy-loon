@@ -37,6 +37,7 @@ Loon 定时触发、BoxJS 存令牌看结果，不用开着电脑。
 | `tests/workbuddy-multi.test.js` | Node mock 测试（假令牌、不联网），多账号/账号池 URL/兑换兜底/401·403/临期等 12 个场景 |
 | `tests/workbuddy-login.test.js` | Node mock 测试：手机登录换令牌、BoxJS 交棒、自动续期、PKCE、续期失败等 14 个场景 |
 | `tests/workbuddy-page.test.js` | Node mock 测试：登录页内联是否与 `login.html` 字节级一致、回的是不是 200 + text/html |
+| `tests/workbuddy-regression.test.js` | 缺陷回归测试：存储兼容性、HTTP 错误、账号池 URL 与 OAuth 事务校验 |
 
 跑测试（需要 Node，与 Loon 无关；两个文件都应全绿）：
 
@@ -44,13 +45,14 @@ Loon 定时触发、BoxJS 存令牌看结果，不用开着电脑。
 node tests/workbuddy-multi.test.js    # 12 个场景，✓ 全部断言通过
 node tests/workbuddy-login.test.js    # 14 个场景，✓ 全部断言通过
 node tests/workbuddy-page.test.js     # 登录页内联，✓ 全部断言通过
+node tests/workbuddy-regression.test.js # 缺陷回归：存储/HTTP/OAuth/账号池 URL
 ```
 
 ## 2. 部署三步
 
 ### 第 1 步 · 拿令牌
 
-三条路，**能碰手机就走 C**（不用电脑，而且只有它能自动续期）。
+三条路，**能碰手机就走 C**（不用电脑，而且只有它能自动续期；安全登录事务需要最新版 Loon 插件）。
 
 #### C. 手机登录（推荐，不用电脑）
 
@@ -66,8 +68,7 @@ https://www.codebuddy.cn/wb-login
 走本插件的 MITM（登录回调也要），所以**只要 Loon 通，这一页就一定打得开**。
 
 > 备用地址（需能访问 GitHub Pages）：`https://xlzs001.github.io/workbuddy-loon/login.html`
-> —— 同一份 `login.html`，功能完全一样，只是在那一页上令牌会记进 localStorage；
-> 而 `wb-login` 那个地址与 codebuddy 官网同源，为了不给同源脚本留把柄，令牌只留在内存里。
+> —— 同一份 `login.html`。两个入口都只把敏感令牌保存在当前页面内存中，刷新或关闭后自动清除；需要复用时请立即复制到 BoxJS。
 
 点「用手机号登录」→ 走 CodeBuddy 官方登录页（手机号 + 验证码）→ 登录完成后，
 **装了插件的话浏览器会自动跳回登录页，并在页面顶部显示结果横幅**：
@@ -94,18 +95,18 @@ https://www.codebuddy.cn/wb-login
 
 三条路径（从最省事到最折腾）：
 
-- **① BoxJS 交棒（推荐，不需要 MITM、不需要回调被拦下）**：在任一登录页点「用手机号登录」→ 输手机号 + 验证码 → 点登录。
+- **① BoxJS 交棒（推荐，需要最新版插件建立一次性事务，但不要求回调被自动拦下）**：在任一登录页点「用手机号登录」→ 输手机号 + 验证码 → 点登录。
   登录完**页面停在哪儿都无所谓**（可能是一段 `{"message":"Your IP address is not allowed"}`，也可能一直转圈），
   只要**地址栏那条 URL 里带着 `code=`**：整段复制 → 回到 BoxJS → WorkBuddy 应用 → 「**登录回调地址**」→ 粘贴 → 点右下角蓝色按钮保存 →
-  再点「**立即签到一轮（手动运行）**」。脚本会在手机本地把 `code` 换成令牌、验证能不能签到、写进账号池，并弹通知告诉你结果。
-  这条路不需要 Loon 拦回调（换令牌是脚本自己发出去的请求，与浏览器跨域无关），换完（或失败）那个字段会被自动清空。
+  再点「**立即签到一轮（手动运行）**」。最新版插件会在登录开始前保存 10 分钟有效的一次性 PKCE 事务；脚本校验 state 后在手机本地换令牌、验证签到并写入账号池。
+  换完（或失败）回调地址与一次性事务都会自动清空。该流程需要最新版 Loon 插件来建立安全事务。
   `code` 只有约 **1 分钟**有效期，粘完马上点。
 - **② 装了插件的 MITM（全自动）**：Loon 在回调那一跳里把 `code` 换成令牌、验证可用、写进 BoxJS 账号池，
-  再回一个 `302` 把浏览器送回登录页 —— 所以**成功、失败都看得见**。PKCE 不用管：`account-console` 这个客户端在服务端**强制 PKCE(S256)**（不带 `code_challenge_method` 会直接被 Keycloak 打回 `invalid_request`），登录页因此始终带着 PKCE，并把 verifier 编进 `state`，Loon 从回调 URL 里就能取到 —— 不用往 BoxJS 里填 `WorkBuddy_LoginVerifier`。
+  再回一个 `302` 把浏览器送回登录页 —— 所以**成功、失败都看得见**。PKCE 不用管：`account-console` 强制 PKCE(S256)，登录页会先把 verifier 与随机 state 保存为 10 分钟有效的一次性事务；回调只带 state，脚本校验并消费事务后再换令牌，verifier 不进入 URL。
 - **③ 在页面上直接换令牌（只有 Loon 吐出来的那份 `wb-login` 才行）**：实测 `account-console` 的令牌接口
   **不给跨域许可**（预检 `OPTIONS` 带 `access-control-allow-origin`，但真正的 `POST` 响应**没有**这个头），
-  所以从 `github.io` 那份 Pages 页面上点「换取令牌」会被浏览器拦下（`Load failed` / `Failed to fetch`）——
-  这不是地址的问题，换令牌请走 ① 或 ②。`wb-login` 那一页与 codebuddy 同源，点「换取令牌」可以直接换。
+  所以从 `github.io` 那份 Pages 页面上点「换取令牌」可能被浏览器拦下（`Load failed` / `Failed to fetch`）——
+  这不是地址的问题，换令牌请走 ① 或 ②。`wb-login` 那一页与 codebuddy 同源，可直接换取。
 
 这样拿到的令牌带 `refresh_token`，**脚本每轮会自己续期**，基本一次登录管很久。
 
@@ -122,7 +123,8 @@ https://www.codebuddy.cn/wb-login
 
 ```bash
 python3 accounts-slim.py wb-switch-accounts-2026-10-06.json
-# → 一行 JSON 已复制到剪贴板（macOS pbcopy），终端只显示打码摘要与到期时间
+# → JSON 已复制到系统剪贴板，终端只显示不含令牌的摘要与到期时间
+# 无剪贴板环境：显式使用 --output accounts.json（或 --stdout）
 ```
 
 它只保留 `nickname` / `access_token` / `uid` / `domain` / `enterpriseId` / `expiresAt` / `note`，
@@ -188,11 +190,11 @@ git remote add origin https://github.com/xlzs001/workbuddy-loon.git
 git branch -M main && git push -u origin main
 ```
 
-之后每次改脚本只要 `git add -A && git commit -m "update" && git push`。
+修复后先提交并创建不可变版本标签（当前配置为 `v1.1.0`），再推送分支与标签；生产插件不会自动追踪可变的 `main`。
 嫌 raw.githubusercontent.com 慢可以用 jsDelivr 包一层（同步有延迟，插件地址不用改）：
 
 ```
-https://cdn.jsdelivr.net/gh/xlzs001/workbuddy-loon@main/workbuddy.js
+https://cdn.jsdelivr.net/gh/xlzs001/workbuddy-loon@v1.1.0/workbuddy.js
 ```
 
 > 想换仓库：把 `WorkBuddy.plugin` 与 `boxjs.json` 里全部 `xlzs001/workbuddy-loon` 替换掉即可。
@@ -202,9 +204,9 @@ https://cdn.jsdelivr.net/gh/xlzs001/workbuddy-loon@main/workbuddy.js
 1. **安装 BoxJS**（没装过的话）：Loon → 配置 → 插件 → 添加
    `https://raw.githubusercontent.com/chavyleung/scripts/master/box/rewrite/boxjs.rewrite.loon.plugin`
 2. **添加签到插件**：Loon → 配置 → 插件 → 添加 →
-   `https://raw.githubusercontent.com/xlzs001/workbuddy-loon/main/WorkBuddy.plugin` → 打开开关
+   `https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.1.0/WorkBuddy.plugin` → 打开开关
 3. **添加 BoxJS 订阅**：打开 BoxJS 网页/App → 订阅 → 添加
-   `https://raw.githubusercontent.com/xlzs001/workbuddy-loon/main/boxjs.json`
+   `https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.1.0/boxjs.json`
 4. **填令牌**：BoxJS → 应用 → 「WorkBuddy 自动签到」 →
    多账号：粘贴到 **「账号池」**；单账号：填 `accessToken` 与 `uid`
    （`enterpriseId` / `domain` 仅企业账号需要）→ **点右下角蓝色浮动按钮保存**，

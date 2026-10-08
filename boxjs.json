@@ -15,24 +15,24 @@
         "https://raw.githubusercontent.com/88lin/workbuddy-auto-signin/main/assets/cover.jpg"
       ],
       "description": "自动领取 WorkBuddy 每日签到积分与成长中心全部奖励，支持多账号。令牌可以手机登录直接获取（点上面的按钮），也可以由桌面端导出，或由插件的 MITM 脚本自动保鲜。",
-      "script": "https://raw.githubusercontent.com/xlzs001/workbuddy-loon/main/workbuddy.js",
-      "script_timeout": 300,
+      "script": "https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.1.0/workbuddy.js",
+      "script_timeout": 600,
       "scripts": [
         {
           "name": "立即签到一轮（手动运行；粘了「登录回调地址」时会先换令牌）",
-          "script": "https://raw.githubusercontent.com/xlzs001/workbuddy-loon/main/workbuddy.js",
-          "script_timeout": 300
+          "script": "https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.1.0/workbuddy.js",
+          "script_timeout": 600
         },
         {
           "name": "立即签到一轮（备用线路 jsDelivr，主线路拉不动时用）",
-          "script": "https://cdn.jsdelivr.net/gh/xlzs001/workbuddy-loon@main/workbuddy.js",
-          "script_timeout": 300
+          "script": "https://cdn.jsdelivr.net/gh/xlzs001/workbuddy-loon@v1.1.0/workbuddy.js",
+          "script_timeout": 600
         }
       ],
       "keys": [
         "WorkBuddy_Accounts",
         "WorkBuddy_AccountsURL",
-        "WorkBuddy_LoginVerifier",
+        "WorkBuddy_LoginTransaction",
         "WorkBuddy_LoginCallback",
         "WorkBuddy_LoginClient",
         "WorkBuddy_Budget",
@@ -61,7 +61,7 @@
           "name": "账号池 URL（可选）",
           "val": "",
           "type": "text",
-          "desc": "把账号池 JSON 托管在自己的地址上并填这里，脚本每轮会拉取并缓存（拉取时不带任何认证头）。启用后以 URL 为准，本地账号池只作为拉取失败时的兜底。"
+          "desc": "把账号池 JSON 托管在自己的 HTTPS 地址上并填这里，脚本每轮会拉取、校验后缓存（拉取时不带任何认证头）。仅接受 HTTPS，响应上限 1 MiB、最多 100 个账号；本地账号池作为拉取或校验失败时的兜底。"
         },
         {
           "id": "WorkBuddy_LoginClient",
@@ -69,13 +69,6 @@
           "val": "account-console",
           "type": "text",
           "desc": "手机登录换令牌用的 Keycloak 公开客户端。account-console 与 account 都可用且回调地址已注册；填错会得到「Invalid client or Invalid client credentials」。改这里等于同时改登录页和 Loon 回调。 注意：account-console 在服务端强制 PKCE(S256)，登录页会始终带上 code_challenge。"
-        },
-        {
-          "id": "WorkBuddy_LoginVerifier",
-          "name": "手机登录 PKCE verifier（一般留空）",
-          "val": "",
-          "type": "text",
-          "desc": "登录页已把 PKCE verifier 编进回调 URL 的 state（<随机>~<verifier>），Loon 回调那一步会自动取出来，所以这里留空就行。只有当你自己手搓授权链接、state 里没带 verifier 时才需要手填。注意：account-console 在服务端强制 PKCE(S256)，完全不带 PKCE 的授权请求会被打回 invalid_request。"
         },
         {
           "id": "WorkBuddy_LoginCallback",
@@ -157,7 +150,7 @@
           "desc": "默认只在真领到东西或出错时通知，避免「已签过 / Buddy 还在路上」刷屏。"
         }
       ],
-      "desc_html": "<div style=\"padding:8px 0\"><a href=\"https://www.codebuddy.cn/wb-login\" target=\"_blank\" style=\"display:inline-block;padding:10px 18px;border-radius:22px;text-decoration:none;font-weight:600;margin:0 8px 8px 0;background:#2b7fff;color:#fff\">📱 手机登录（走 Loon）</a><a href=\"https://xlzs001.github.io/workbuddy-loon/login.html\" target=\"_blank\" style=\"display:inline-block;padding:10px 18px;border-radius:22px;text-decoration:none;font-weight:600;margin:0 8px 8px 0;background:#3a3f4b;color:#fff\">🧭 备用登录页（不用 Loon）</a><p style=\"margin:10px 0 0;font-size:13px;line-height:1.7;color:#888\"><b>最省事的登录方式（不需要 MITM）</b>：打开任一地址 → 点「用手机号登录 CodeBuddy」→ 输手机号 + 验证码 → 登录。<b>登录完不用管页面停在哪儿</b>（可能是一段 <code>{\"message\":\"Your IP address is not allowed\"}</code> 或 <code>{\"error_msg\":\"404 Route Not Found\"}</code>，都不影响），只要地址栏那条 URL 里带着 <code>code=</code>：把它整段复制，粘进下面的「<b>登录回调地址</b>」并保存，再点下面「<b>立即签到一轮（手动运行）</b>」，脚本会在手机本地把 code 换成令牌写进账号池，之后自动续期。<br>第一个地址由 Loon 直接吐出来（需要插件已更新 + MITM 开关打开 + CA 证书被信任），打不开或显示 404 就说明 MITM 没生效，用第二个即可 —— 手机浏览器打不开 github.io 时反过来用第一个。</p></div>"
+      "desc_html": "<div style=\"padding:8px 0\"><a href=\"https://www.codebuddy.cn/wb-login\" target=\"_blank\" style=\"display:inline-block;padding:10px 18px;border-radius:22px;text-decoration:none;font-weight:600;margin:0 8px 8px 0;background:#2b7fff;color:#fff\">📱 手机登录</a><p style=\"margin:10px 0 0;font-size:13px;line-height:1.7;color:#888\">请先更新并启用最新版 Loon 插件。登录页会建立 10 分钟有效的一次性 PKCE 事务，回调时严格校验 state，verifier 不会写入 URL。若自动回调未命中，可把完整的 CodeBuddy HTTPS 回调地址粘进下面的「<b>登录回调地址</b>」并保存，再点「<b>立即签到一轮</b>」。令牌只保存在 BoxJS，不会由登录页写入 localStorage。</p></div>"
     }
   ]
 }

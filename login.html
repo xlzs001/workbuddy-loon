@@ -46,14 +46,14 @@ hr{border:0;border-top:1px solid var(--line);margin:14px 0}
 <div class="card">
   <h2>① 登录（手机号 + 验证码）</h2>
   <button class="btn" id="go">用手机号登录 CodeBuddy</button>
-  <p class="dim" id="goHint">装了 Loon 插件的：登录完会自动跳回本页、顶部弹出结果。没装的：登录完把地址栏那一整条 URL 拷回来，粘到第 ② 步。</p>
+  <p class="dim" id="goHint">请先安装最新版 Loon 插件。登录页会建立一次性安全事务；登录完通常自动跳回本页，若回调未命中可把地址栏完整 URL 粘到第 ② 步。</p>
   <details>
     <summary>登录完没有任何提示？看这里</summary>
     <p class="dim">最可能是 Loon 没拦到这次回调，逐条查：</p>
     <ol>
       <li>Loon → 插件 → 把 WorkBuddy 插件<b>更新一次</b>，确认里面有 <code>WorkBuddy手机登录</code> 这一条。</li>
       <li>Loon 设置里 <b>MITM 开关要打开</b>，且 <code>[MITM]</code> 的 hostname 含 <code>www.codebuddy.cn</code>。</li>
-      <li>不想折腾 Loon：登录完复制地址栏 URL，粘到第 ② 步，这一页自己换令牌。</li>
+      <li>自动回调未命中：复制地址栏完整 URL，粘到第 ② 步；仍会使用登录前建立的一次性事务校验。</li>
       <li>跳到 <code>…/account/?…</code> 之后屏幕上只有一段 <code>{"message":"Your IP address is not allowed"}</code>？<b>没关系</b> —— 地址栏那条 URL 里带着 <code>code=</code>，整段复制到第 ② 步就能换到令牌。</li>
       <li><code>code</code> 只有约 <b>1 分钟</b>有效期，超时了重新点一次登录。</li>
     </ol>
@@ -65,7 +65,7 @@ hr{border:0;border-top:1px solid var(--line);margin:14px 0}
       <option value="account">account（备用）</option>
     </select></p>
     <p class="dim">PKCE：<b>S256（强制开启，关不掉）</b> —— CodeBuddy 服务端要求，不带会被直接打回。
-      verifier 会被编进 <code>state</code> 一起回到回调 URL 里，所以走 Loon 自动模式也不用往 BoxJS 填 <code>WorkBuddy_LoginVerifier</code>。</p>
+      verifier 只保存在当前会话和 Loon 的一次性事务存储中，不会出现在回调 URL；回调时会校验 state，换取完成后立即清除。</p>
   </details>
 </div>
 
@@ -108,15 +108,14 @@ hr{border:0;border-top:1px solid var(--line);margin:14px 0}
   <h2>⑤ 全自动模式（可选）</h2>
   <p class="dim">在 Loon 里装好本仓库插件后，插件会拦下这次登录回调：把令牌<b>直接写进 BoxJS 账号池</b>、顺手验证能不能签到，然后<b>自动把浏览器送回本页</b>。这时你只要：</p>
   <ol>
-    <li>PKCE 不用管（页面强制开启 S256，verifier 会跟着回调一起带回来）</li>
+    <li>PKCE 不用管（页面强制开启 S256，verifier 会暂存在 Loon 的一次性登录事务中）</li>
     <li>点登录 → 输手机号 + 验证码</li>
     <li>等浏览器跳回本页 → 顶部出现 <b>✅ 登录成功 / ⚠️ 令牌未验证通过 / ❌ 登录没有完成</b> 的横幅（Loon 和 BoxJS 也会各收到一条通知）</li>
   </ol>
-  <p class="dim"><b>不装 Loon 也能全自动（「交棒」模式）</b>：登录完把地址栏那条 URL 整段复制 →
+    <p class="dim"><b>BoxJS 交棒模式</b>：登录完把地址栏那条 URL 整段复制 →
     手机 <b>BoxJS</b> → WorkBuddy 应用 →「<b>登录回调地址</b>」→ 粘贴 → 保存 →
-    再点「<b>立即签到一轮（手动运行）</b>」。这一步由脚本在手机本地把 <code>code</code> 换成令牌、
-    验证能不能签到、写进账号池，成败都会弹通知（换令牌是脚本自己发出去的请求，不受浏览器跨域限制）。
-    换完那个字段会自动清空，之后正常跑就行。</p>
+    再点「<b>立即签到一轮（手动运行）</b>」。最新版插件会在登录前保存一次性 PKCE 事务，脚本校验 state 后换取令牌、
+    验证签到并写入账号池。换完那个字段与一次性事务都会自动清空。</p>
 </div>
 
 <!-- ⑥ 说明 -->
@@ -127,7 +126,7 @@ hr{border:0;border-top:1px solid var(--line);margin:14px 0}
     <li>令牌换回来之后，本页把它整理成 BoxJS 账号池的格式（含 <code>refresh_token</code>），方便你一键复制。</li>
     <li>令牌只能由签发它的客户端续期。<code>account-console</code> 是公开客户端，所以这页换出来的令牌 <b>以后能自己续期</b>；电脑版导出的旧令牌（client <code>console</code>）不行，过期只能重登。</li>
   </ol>
-  <p class="dim">令牌是本机数据，只保存在你的浏览器里，不会被上传到任何地方。Pages 上会记住（localStorage）；如果是 <code>www.codebuddy.cn/wb-login</code> 这个由 Loon 直接提供的地址，为了不同源暴露，令牌只留在内存里（关掉页面即消失，要复用就复制走）。</p>
+  <p class="dim">令牌只保存在当前页面内存中，不会写入 localStorage；刷新或关闭页面后自动消失。需要复用时请立即复制到 BoxJS。</p>
   <hr>
   <p class="dim">不想用这一页？也可以直接在手机浏览器登录官方页面：<a href="https://www.codebuddy.cn/" target="_blank" rel="noreferrer" style="color:var(--acc)">www.codebuddy.cn</a>（但官方登录的令牌换不到手，还需要配合 Loon 抓包）。</p>
 </div>
@@ -141,17 +140,20 @@ var REDIRECT = ISSUER + "/account/";
 var SCOPE    = "openid profile offline_access email";
 var API_BASE = "https://copilot.tencent.com";
 
-/* 这一页有两种来源：
-     ① 由 Loon 直接提供 → https://www.codebuddy.cn/wb-login（与 codebuddy 官网同源）
-     ② GitHub Pages → https://xlzs001.github.io/workbuddy-loon/login.html
-   同源的情况下把 refresh_token 落进 localStorage，等于让该站点的其它脚本也能读到，
-   所以第 ① 种只在内存里留一份（关掉页面就没了，需要就复制走）。 */
-var PERSIST = location.hostname.indexOf("codebuddy.cn") < 0;
+/* 敏感令牌与 PKCE 事务只留在当前页面内存中；刷新/关闭后自动清除。 */
 var MEM = {};
 var LS = {
-  get: function (k) { try { return (PERSIST ? localStorage.getItem("wb_" + k) : MEM[k]) || ""; } catch (e) { return MEM[k] || ""; } },
-  set: function (k, v) { MEM[k] = v; if (!PERSIST) return; try { localStorage.setItem("wb_" + k, v); } catch (e) {} },
-  del: function (k) { delete MEM[k]; if (!PERSIST) return; try { localStorage.removeItem("wb_" + k); } catch (e) {} }
+  get: function (k) { return MEM[k] || ""; },
+  set: function (k, v) { MEM[k] = v; },
+  del: function (k) { delete MEM[k]; }
+};
+var TX = {
+  get: function (k) { try { return sessionStorage.getItem("wb_tx_" + k) || ""; } catch (e) { return MEM["tx_" + k] || ""; } },
+  set: function (k, v) { MEM["tx_" + k] = v; try { sessionStorage.setItem("wb_tx_" + k, v); } catch (e) {} },
+  clear: function () {
+    delete MEM.tx_state; delete MEM.tx_verifier; delete MEM.tx_client;
+    try { sessionStorage.removeItem("wb_tx_state"); sessionStorage.removeItem("wb_tx_verifier"); sessionStorage.removeItem("wb_tx_client"); } catch (e) {}
+  }
 };
 function $(id) { return document.getElementById(id); }
 function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) {
@@ -191,6 +193,7 @@ function say(el, cls, html) { el.innerHTML = '<p class="' + cls + '">' + html + 
 $("go").onclick = function () {
   var client = $("client").value;
   LS.set("client", client);
+  TX.set("client", client);
   // account-console 在服务端强制 PKCE(S256)：不带 code_challenge_method 会被直接打回
   //   .../account/?error=invalid_request&error_description=Missing+parameter%3A+code_challenge_method
   // 所以这里没有「关掉」这个选项。
@@ -200,21 +203,29 @@ $("go").onclick = function () {
     return;
   }
   var verifier = rand(32) + rand(32);
-  LS.set("verifier", verifier);
-  // Keycloak 会把 state 原样回显 → 把 verifier 编进 state，Loon 回调那一步也能拿到
-  var state = rand(16) + "~" + verifier;
-  LS.set("state", state);
+  var state = rand(32);
+  TX.set("verifier", verifier);
+  TX.set("state", state);
   sha256(verifier).then(function (ch) {
-    var q = ["client_id=" + encodeURIComponent(client),
-             "response_type=code",
-             "scope=" + encodeURIComponent(SCOPE),
-             "redirect_uri=" + encodeURIComponent(REDIRECT),
-             "state=" + encodeURIComponent(state),
-             "code_challenge=" + ch,
-             "code_challenge_method=S256"];
-    location.href = AUTH_EP + "?" + q.join("&");
-  }, function () {
-    $("goHint").innerHTML = '<span class="err">算 PKCE challenge 失败，换个浏览器或重新打开这一页再试。</span>';
+    var sessionUrl = "https://www.codebuddy.cn/wb-login/session";
+    return fetch(sessionUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ state: state, verifier: verifier, client: client })
+    }).then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      var q = ["client_id=" + encodeURIComponent(client),
+               "response_type=code",
+               "scope=" + encodeURIComponent(SCOPE),
+               "redirect_uri=" + encodeURIComponent(REDIRECT),
+               "state=" + encodeURIComponent(state),
+               "code_challenge=" + ch,
+               "code_challenge_method=S256"];
+      location.href = AUTH_EP + "?" + q.join("&");
+    });
+  }).catch(function () {
+    TX.clear();
+    $("goHint").innerHTML = '<span class="err">初始化安全登录事务失败。请确认使用最新版 Loon 插件，并重新打开页面。</span>';
   });
 };
 
@@ -227,14 +238,22 @@ $("paste").onclick = function () {
   } else say($("exOut"), "dim", "这台设备不支持读剪贴板：长按输入框手动粘贴。");
 };
 
+function safeDecode(s) {
+  try { return decodeURIComponent(String(s || "").replace(/\+/g, "%20")); } catch (e) { return ""; }
+}
 function parseCode(text) {
   text = String(text || "").trim();
-  if (!text) return { code: "", state: "", verifier: "" };
+  if (!text) return { code: "", state: "", verifier: "", validUrl: false };
+  var validUrl = false;
+  try {
+    var u = new URL(text);
+    validUrl = u.protocol === "https:" && u.hostname === "www.codebuddy.cn" &&
+      u.pathname === "/auth/realms/copilot/account/";
+  } catch (e) {}
   var m = text.match(/[?&#]code=([^&#\s]+)/) || text.match(/^code=([^&#\s]+)/);
   var s = text.match(/[?&#]state=([^&#\s]+)/);
-  var st = s ? decodeURIComponent(s[1]) : "";
-  var til = st.indexOf("~");            // 登录页把 PKCE verifier 编在 state 里：<随机>~<verifier>
-  return { code: m ? decodeURIComponent(m[1]) : text, state: st, verifier: til > 0 ? st.slice(til + 1) : "" };
+  var st = s ? safeDecode(s[1]) : "";
+  return { code: m ? safeDecode(m[1]) : "", state: st, validUrl: validUrl };
 }
 
 function exchange(body) {
@@ -298,21 +317,25 @@ function showTokens(tok, client) {
 
 $("ex").onclick = function () {
   var p = parseCode($("cb").value);
+  if (!p.validUrl) { say($("exOut"), "err", "回调地址不是预期的 CodeBuddy HTTPS 地址，请复制完整地址栏 URL。"); return; }
   if (!p.code) { say($("exOut"), "err", "没找到 code，把登录后那个完整的回调网址整段粘进来。"); return; }
-  var client = LS.get("client") || $("client").value || "account-console";
-  var body = { grant_type: "authorization_code", client_id: client, code: p.code, redirect_uri: REDIRECT };
-  var v = LS.get("verifier") || p.verifier;   // 本机没记住就从这条回调 URL 的 state 里取
-  if (!v) {
-    say($("exOut"), "err", "这条 URL 里没有 PKCE 的 verifier（state 里没有 ~）。请回到第 ① 步重新点一次「用手机号登录」，用新给的那条回调 URL。");
+  var expectedState = TX.get("state");
+  var localVerifier = TX.get("verifier");
+  if (!expectedState || p.state !== expectedState || !localVerifier) {
+    say($("exOut"), "err", "state 与当前登录事务不匹配或已失效。请在本页重新点一次「用手机号登录」。");
     return;
   }
+  var client = TX.get("client") || LS.get("client") || $("client").value || "account-console";
+  var body = { grant_type: "authorization_code", client_id: client, code: p.code, redirect_uri: REDIRECT };
+  var v = localVerifier;
   body.code_verifier = v;
-  LS.set("verifier", v);
   say($("exOut"), "dim", "正在换取令牌…");
   exchange(body).then(function (tok) {
+    TX.clear();
     say($("exOut"), "ok", "换到了 ✓");
     showTokens(tok, client);
   }).catch(function (err) {
+    TX.clear();
     var t = String((err && err.message) || err);
     if (/failed to fetch|load failed|networkerror|network request failed|typeerror/i.test(t)) {
       say($("exOut"), "warn",
@@ -327,9 +350,16 @@ $("ex").onclick = function () {
 
 $("copyPool").onclick = function () {
   var t = $("pool").value;
+  function clearSensitive() {
+    LS.del("refresh_token"); LS.del("nickname"); LS.del("client");
+    $("rt").value = "";
+    renderSession();
+  }
   if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(t).then(function () { say($("verifyOut"), "ok", "已复制 ✓"); },
-                                          function () { $("pool").select(); say($("verifyOut"), "dim", "自动复制失败，已全选，长按复制。"); });
+    navigator.clipboard.writeText(t).then(function () {
+      clearSensitive();
+      say($("verifyOut"), "ok", "已复制 ✓ 页面内保存的续期令牌已清除。");
+    }, function () { $("pool").select(); say($("verifyOut"), "dim", "自动复制失败，已全选，长按复制。"); });
   } else { $("pool").select(); say($("verifyOut"), "dim", "已全选，长按复制。"); }
 };
 
@@ -409,9 +439,7 @@ function goAgain() { location.href = location.pathname; }
 (function srcNote() {
   var el = $("src");
   if (!el) return;
-  el.innerHTML = PERSIST
-    ? "（这一页来自 GitHub Pages，令牌会记在浏览器里）"
-    : "（这一页由 Loon 直接在 <code>www.codebuddy.cn/wb-login</code> 上提供，令牌只留在内存里）";
+  el.innerHTML = "（敏感令牌只留在当前页面内存中，刷新或关闭后自动清除）";
 })();
 banner();
 renderSession();

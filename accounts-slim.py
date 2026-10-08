@@ -8,8 +8,9 @@
 
 用法：
     python3 accounts-slim.py wb-switch-accounts-2026-10-06.json
-    # 默认把结果复制进剪贴板（macOS pbcopy），并只把打码后的摘要打到终端
-    python3 accounts-slim.py *.json > accounts.json     # 需要原文时重定向即可
+    # 默认复制到剪贴板，终端只显示不含令牌的摘要
+    python3 accounts-slim.py --stdout *.json > accounts.json
+    python3 accounts-slim.py --output accounts.json *.json
 
 安全提醒：输出里含**真实令牌**，不要提交进任何仓库、不要粘到公开聊天里。
 """
@@ -84,14 +85,16 @@ def main():
     ap = argparse.ArgumentParser(add_help=True, description="压缩账号 JSON 供 BoxJS 使用")
     ap.add_argument("files", nargs="+", help="账号 JSON 文件（可多个）")
     ap.add_argument("--no-clip", action="store_true", help="不写入剪贴板")
+    ap.add_argument("--stdout", action="store_true", help="把含真实令牌的完整 JSON 输出到 stdout")
+    ap.add_argument("--output", help="把含真实令牌的完整 JSON 写入指定文件")
     ap.add_argument("--keep-expired", action="store_true", help="保留已过期账号（默认剔除）")
-    ap.add_argument("--pretty", action="store_true", help="输出缩进后的 JSON（不方便粘贴，仅用于查看）")
+    ap.add_argument("--pretty", action="store_true", help="完整 JSON 使用缩进格式（配合 --stdout/--output）")
     args = ap.parse_args()
 
     out, skipped, seen = [], [], set()
     for path in args.files:
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, "r", encoding="utf-8-sig") as f:
                 data = json.load(f)
         except Exception as e:
             print("!! 读取 %s 失败：%s" % (path, e), file=sys.stderr)
@@ -116,18 +119,36 @@ def main():
         return 1
 
     text = json.dumps(out, ensure_ascii=False, indent=2 if args.pretty else None)
-    print(text)
+    delivered = False
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.write("\n")
+        print("→ 已写入 %s" % args.output, file=sys.stderr)
+        delivered = True
+    if args.stdout:
+        print(text)
+        delivered = True
     if not args.no_clip:
-        for cmd in (["pbcopy"], ["wl-copy"], ["xclip", "-selection", "clipboard"]):
+        clip_commands = []
+        if sys.platform == "darwin":
+            clip_commands.append(["pbcopy"])
+        elif sys.platform.startswith("win"):
+            clip_commands.append(["clip"])
+        else:
+            clip_commands.extend([["wl-copy"], ["xclip", "-selection", "clipboard"]])
+        for cmd in clip_commands:
             if shutil.which(cmd[0]):
                 try:
                     subprocess.run(cmd, input=text.encode("utf-8"), check=True)
                     print("→ 已复制到剪贴板（%s）" % cmd[0], file=sys.stderr)
+                    delivered = True
                 except Exception as e:
                     print("→ 复制失败：%s" % e, file=sys.stderr)
                 break
-        else:
-            print("→ 未找到剪贴板工具，请手动复制上面的 JSON", file=sys.stderr)
+    if not delivered:
+        print("!! 未输出敏感令牌：没有可用剪贴板工具。请使用 --stdout 或 --output FILE。", file=sys.stderr)
+        return 2
 
     print("→ 共 %d 个账号，%d 字节" % (len(out), len(text)), file=sys.stderr)
     for name, exp in [(o["nickname"], o.get("expiresAt")) for o in out]:

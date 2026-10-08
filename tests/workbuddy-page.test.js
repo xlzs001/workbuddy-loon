@@ -63,16 +63,18 @@ ok("有 ✅/⚠️/❌ 三种回跳文案",
 ok("PKCE 强制开启（account-console 服务端要求，页面已无「关闭」选项）",
   HTML.indexOf("code_challenge_method=S256") > 0 && HTML.indexOf("<option value=\"0\" selected>关闭") < 0 &&
   HTML.indexOf("强制开启") > 0);
-ok("PKCE verifier 编进 state，回调那一步（Loon 或页面自己）都能取到",
-  HTML.indexOf('rand(16) + "~" + verifier') > 0 && HTML.indexOf('var til = st.indexOf("~")') > 0);
+ok("PKCE verifier 不进入回调 URL，并通过一次性登录事务保存",
+  HTML.indexOf('var state = rand(32)') > 0 && HTML.indexOf('TX.set("verifier", verifier)') > 0 &&
+  HTML.indexOf('state = rand(16) + "~" + verifier') < 0);
 ok("有「登录完没有任何提示？看这里」排错块", HTML.indexOf("登录完没有任何提示") > 0);
-ok("同源（codebuddy.cn）时不落盤：有 PERSIST 守卫",
-  HTML.indexOf("var PERSIST = location.hostname.indexOf(\"codebuddy.cn\") < 0;") > 0);
+ok("refresh token 不写入 localStorage",
+  HTML.indexOf('localStorage.setItem("wb_" + k, v)') < 0 && HTML.indexOf("var MEM = {}") > 0);
 ok("仍指向正确的 realm / 公开客户端",
   HTML.indexOf("realms/copilot") > 0 && HTML.indexOf("account-console") > 0);
 
 console.log("\n=== 脚本侧接线 ===");
 ok("脚本里有 servePage 分支", code.indexOf('if (argument() === "page") return servePage();') > 0);
+ok("脚本里有一次性登录事务分支", code.indexOf('if (argument() === "login-session") return serveLoginSession();') > 0);
 ok("page 分支在 captureToken 之前（否则会被抓令牌逻辑抢走）",
   code.indexOf('if (argument() === "page") return servePage();') < code.indexOf("return captureToken();"));
 ok("登录页地址默认走 codebuddy 域名（不依赖 GitHub Pages）",

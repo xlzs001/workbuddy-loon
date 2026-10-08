@@ -1,8 +1,9 @@
 /* WorkBuddy 多账号端到端 mock 测试（假令牌，不联网） */
 const fs = require("fs");
+const path = require("path");
 const vm = require("vm");
 
-const SRC = "/Users/cccc/Desktop/workbuddy-loon/workbuddy.js";
+const SRC = path.resolve(__dirname, "..", "workbuddy.js");
 const code = fs.readFileSync(SRC, "utf8");
 
 const TOK = { A: "tokA_0123456789abcdef0123456789", B: "tokB_0123456789abcdef0123456789", C: "tokC_0123456789abcdef0123456789" };
@@ -126,7 +127,9 @@ ok("A 账号签到 +10", /大号：成功领取 10 积分/.test(lines1[0] || "")
 ok("A 账号派 Buddy 且跳过低价值步骤", /派 Buddy 去公园/.test(lines1[0] || "") && /没有补登卡/.test(lines1[0] || ""), lines1[0]);
 ok("B 账号今日已签（ALREADY）", /今日已签过/.test(lines1[1] || ""), lines1[1]);
 ok("B 账号领旅行礼物 +30", /领旅行礼物 \+30/.test(lines1[1] || ""), lines1[1]);
-ok("B 账号接单+领奖+补登+兑换+盲盒", /接单/.test(r1.calls.join(" ")) === false || true, null);
+ok("B 账号提交待接任务 t1",
+  r1.calls.filter((c) => /^B POST \/v2\/activity\/growth\/tasks\/accept$/.test(c)).length === 1,
+  r1.calls);
 ok("B 账号领任务奖", /领任务奖「成长任务」/.test(lines1[1] || ""), lines1[1]);
 ok("B 账号补登成功", /补登 \d{4}-\d{2}-02/.test(lines1[1] || ""), lines1[1]);
 ok("B 账号连登兑换入门档（含实发明细）", /连登兑换「入门」（\+50 积分 \+3 能量 \+1 补登卡 \+1 次抽奖）/.test(lines1[1] || ""), lines1[1]);
@@ -240,7 +243,7 @@ const r7 = runCase("场景 7：账号池 URL 挂了但本地有缓存", {
   }
 });
 ok("回退到缓存里的账号", r7.last && r7.last.accounts.length === 1 && r7.last.accounts[0].name === "缓存号", r7.last && r7.last.accounts);
-ok("报告说明拉取失败改用缓存", /已跳过（拉取失败，改用本地缓存）/.test(r7.last && r7.last.report), r7.last && r7.last.report);
+ok("报告说明拉取失败改用缓存", /已跳过（拉取失败（HTTP 500），改用本地缓存）/.test(r7.last && r7.last.report), r7.last && r7.last.report);
 
 /* ---------- 场景 8：URL 与缓存都没有可用账号 ---------- */
 const r8 = runCase("场景 8：账号池 URL 挂了且无缓存", {
@@ -248,7 +251,7 @@ const r8 = runCase("场景 8：账号池 URL 挂了且无缓存", {
   scenario: () => [500, { msg: "boom" }]
 });
 ok("给 NO_AUTH 而不是静默", r8.last && r8.last.result === "NO_AUTH", r8.last && r8.last.result);
-ok("报告说明无账号池可用", /拉取失败，且本地没有账号池/.test(r8.last && r8.last.report), r8.last && r8.last.report);
+ok("报告说明无账号池可用", /拉取失败（HTTP 500），且本地没有账号池/.test(r8.last && r8.last.report), r8.last && r8.last.report);
 
 /* ---------- 场景 9：令牌失效 401 → AUTH_ERROR，并给出可执行提示 ---------- */
 const r9 = runCase("场景 9：令牌失效（401，等同密码错误）", {

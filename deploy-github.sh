@@ -13,6 +13,7 @@ set -euo pipefail
 OWNER="${GH_OWNER:-xlzs001}"
 REPO="${GH_REPO:-workbuddy-loon}"
 BRANCH="main"
+RELEASE_TAG="${RELEASE_TAG:-v1.1.0}"
 cd "$(dirname "$0")"
 
 step() { printf '\n\033[1m→ %s\033[0m\n' "$1"; }
@@ -67,7 +68,13 @@ git config user.name  >/dev/null 2>&1 || git config user.name  "$OWNER"
 git config user.email >/dev/null 2>&1 || git config user.email "$OWNER@users.noreply.github.com"
 echo "   user: $(git config user.name) <$(git config user.email)>"
 git rev-parse --verify HEAD >/dev/null 2>&1 || { echo "   还没有提交，先 git commit"; exit 1; }
+[ -z "$(git status --porcelain)" ] || { echo "   ✘ 工作树还有未提交修改；先提交，再创建发布标签"; exit 1; }
 git branch -M "$BRANCH"
+if git rev-parse "$RELEASE_TAG" >/dev/null 2>&1; then
+  [ "$(git rev-list -n1 "$RELEASE_TAG")" = "$(git rev-parse HEAD)" ] || { echo "   ✘ 标签 $RELEASE_TAG 已存在但不指向当前提交"; exit 1; }
+else
+  git tag -a "$RELEASE_TAG" -m "Release $RELEASE_TAG"
+fi
 
 if [ -n "${GH_TOKEN:-}" ]; then
   step "3/5 通过 API 创建（或确认已存在）仓库 $OWNER/$REPO"
@@ -89,7 +96,7 @@ if [ -n "${GH_TOKEN:-}" ]; then
     || git remote add origin "https://github.com/$OWNER/$REPO.git"
   git -c credential.helper= \
       -c "credential.helper=!f() { echo username=x-access-token; echo password=\$GH_TOKEN; }; f" \
-      push -u origin "$BRANCH"
+      push -u origin "$BRANCH" "$RELEASE_TAG"
   git remote set-url origin "https://github.com/$OWNER/$REPO.git"
   unset GH_TOKEN
 else
@@ -97,16 +104,15 @@ else
   read -r -p "   建好了按回车继续（或 Ctrl-C 退出）… " _
   step "4/5 推送"
   git remote get-url origin >/dev/null 2>&1 || git remote add origin "https://github.com/$OWNER/$REPO.git"
-  git -c credential.helper=osxkeychain push -u origin "$BRANCH"
+  git push -u origin "$BRANCH" "$RELEASE_TAG"
 fi
 
 step "5/5 验证 raw 地址（手机端要用这三个）"
-base="https://raw.githubusercontent.com/$OWNER/$REPO/$BRANCH"
+base="https://raw.githubusercontent.com/$OWNER/$REPO/$RELEASE_TAG"
 for f in workbuddy.js WorkBuddy.plugin boxjs.json login.html; do
   printf "   %-18s %s  " "$f" "$(curl -sS -o /dev/null -w '%{http_code}' "$base/$f")"
   curl -sS -o /dev/null -w "%{size_download} bytes\n" "$base/$f"
 done
-
 cat <<EOF
 
 完成。手机端这么填：

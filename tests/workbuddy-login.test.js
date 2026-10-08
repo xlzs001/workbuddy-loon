@@ -10,9 +10,10 @@
  * 跑法：node tests/workbuddy-login.test.js
  */
 const fs = require("fs");
+const path = require("path");
 const vm = require("vm");
 
-const SRC = "/Users/cccc/Desktop/workbuddy-loon/workbuddy.js";
+const SRC = path.resolve(__dirname, "..", "workbuddy.js");
 const code = fs.readFileSync(SRC, "utf8");
 const KC_TOKEN = "https://www.codebuddy.cn/auth/realms/copilot/protocol/openid-connect/token";
 
@@ -32,6 +33,19 @@ const DAY = 86400000;
 function runCase(name, opts) {
   console.log("\n=== " + name + " ===");
   const store = Object.assign({}, opts.store || {});
+  const callbackUrl = (opts.request && opts.request.url) || store.WorkBuddy_LoginCallback || "";
+  const stateMatch = callbackUrl.match(/[?&]state=([^&#]+)/);
+  const codeMatch = callbackUrl.match(/[?&]code=([^&#]+)/);
+  if (stateMatch && codeMatch && !opts.noTransaction && !store.WorkBuddy_LoginTransaction) {
+    const state = decodeURIComponent(stateMatch[1]);
+    const legacy = state.indexOf("~") > 0 ? state.slice(state.indexOf("~") + 1) : "";
+    store.WorkBuddy_LoginTransaction = JSON.stringify({
+      state: state,
+      verifier: opts.verifier || legacy || "TEST-VERIFIER-0123456789-abcdefghijklmnopqrstuvwxyz",
+      client: "account-console",
+      createdAt: Date.now()
+    });
+  }
   const notified = [];
   const calls = [];
   const doneArgs = [];
@@ -39,7 +53,7 @@ function runCase(name, opts) {
     console: { log: () => {} },
     $persistentStore: {
       read: (k) => (store[k] === undefined ? null : store[k]),
-      write: (v, k) => { store[k] = String(v); }
+      write: (v, k) => { store[k] = String(v); return true; }
     },
     $notify: (t, s, b) => notified.push({ t, s, b }),
     $done: (a) => { doneArgs.push(a); },
@@ -99,7 +113,7 @@ ok("跳回地址带 ok=1 和昵称",
 /* ---------- 场景 2：换令牌失败 ---------- */
 const r2 = runCase("场景 2：code 已失效（invalid_grant），不写账号池", {
   argument: "login",
-  request: { url: "https://www.codebuddy.cn/auth/realms/copilot/account/?code=used-code" },
+  request: { url: "https://www.codebuddy.cn/auth/realms/copilot/account/?state=state-2&code=used-code" },
   token: () => ({ status: 400, data: { error: "invalid_grant", error_description: "Code not valid" } }),
   api: API_OK
 });
@@ -117,7 +131,7 @@ ok("失败也跳回登录页并把原因带在 err 里（用户能看到为什�
 const AT3 = jwt("uid-phone-9", "不认的账号", Math.floor((Date.now() + 40 * DAY) / 1000));
 const r3 = runCase("场景 3：令牌换到但 copilot 回 401", {
   argument: "login",
-  request: { url: "https://www.codebuddy.cn/auth/realms/copilot/account/?code=fresh-code" },
+  request: { url: "https://www.codebuddy.cn/auth/realms/copilot/account/?state=state-3&code=fresh-code" },
   token: () => ({ status: 200, data: { access_token: AT3, refresh_token: "RT-3", token_type: "Bearer" } }),
   api: () => ({ status: 401, data: {} })
 });
@@ -220,60 +234,64 @@ ok("通知说明没抓到 code、也没放给网关", /没有 code/.test(r8.noti
 const d8 = r8.doneArgs.filter((a) => a && a.response).pop();
 ok("回 302 回登录页", !!d8 && d8.response.status === 302 && /wb-login\?err=/.test(d8.response.headers.Location), d8);
 
-/* ---------- 场景 9：PKCE verifier 编在回调 URL 的 state 里（登录页的做法） ---------- */
+/* ---------- 场景 9：一次性事务提供 PKCE verifier ---------- */
 const AT9 = jwt("uid-pkce-9", "新登录账号", Math.floor((Date.now() + 40 * DAY) / 1000));
-const r9 = runCase("场景 9：回调 state 里带 verifier → 自动当 code_verifier 用", {
+const r9 = runCase("场景 9：事务 verifier 自动用于 code_verifier", {
   argument: "login",
-  request: { url: "https://www.codebuddy.cn/auth/realms/copilot/account/?state=ab12cd34~VERIFIER-9-xyz&session_state=aa&code=code-9" },
-  token: (m, body) => (q(body).code_verifier === "VERIFIER-9-xyz"
+  verifier: "VERIFIER-9-abcdefghijklmnopqrstuvwxyz0123456789",
+  request: { url: "https://www.codebuddy.cn/auth/realms/copilot/account/?state=state-9&session_state=aa&code=code-9" },
+  token: (m, body) => (q(body).code_verifier === "VERIFIER-9-abcdefghijklmnopqrstuvwxyz0123456789"
     ? { status: 200, data: { access_token: AT9, refresh_token: "RT-9", expires_in: 3600 } }
     : { status: 400, data: { error: "invalid_grant", error_description: "Missing parameter: code_verifier" } }),
   api: API_OK
 });
 const t9 = r9.calls.find((c) => c.url.indexOf("openid-connect/token") >= 0);
-ok("从 state 里取出 verifier 并发给令牌端点（服务端强制 PKCE 也能换到）",
-  !!t9 && q(t9.body).code_verifier === "VERIFIER-9-xyz", t9 && t9.body);
+ok("从一次性事务取 verifier 并发给令牌端点",
+  !!t9 && q(t9.body).code_verifier === "VERIFIER-9-abcdefghijklmnopqrstuvwxyz0123456789", t9 && t9.body);
 ok("换到令牌并写入账号池", pool(r9.store).length === 1 && pool(r9.store)[0].uid === "uid-pkce-9", pool(r9.store));
 
-/* ---------- 场景 10：BoxJS 手填的 verifier 优先级更高 ---------- */
-const AT10 = jwt("uid-pkce-10", "手填优先", Math.floor((Date.now() + 40 * DAY) / 1000));
-const r10 = runCase("场景 10：BoxJS 里手填的 WorkBuddy_LoginVerifier 优先于 state", {
+/* ---------- 场景 10：事务 verifier 优先，旧手填值不会覆盖 ---------- */
+const AT10 = jwt("uid-pkce-10", "事务优先", Math.floor((Date.now() + 40 * DAY) / 1000));
+const r10 = runCase("场景 10：一次性事务 verifier 优先于旧手填值", {
   argument: "login",
   store: { WorkBuddy_LoginVerifier: "HAND-TYPED-10" },
-  request: { url: "https://www.codebuddy.cn/auth/realms/copilot/account/?state=ab12cd34~FROM-STATE&code=code-10" },
-  token: (m, body) => (q(body).code_verifier === "HAND-TYPED-10"
+  verifier: "FROM-TRANSACTION-10-abcdefghijklmnopqrstuvwxyz",
+  request: { url: "https://www.codebuddy.cn/auth/realms/copilot/account/?state=state-10&code=code-10" },
+  token: (m, body) => (q(body).code_verifier === "FROM-TRANSACTION-10-abcdefghijklmnopqrstuvwxyz"
     ? { status: 200, data: { access_token: AT10, expires_in: 3600 } }
     : { status: 400, data: { error: "invalid_grant" } }),
   api: API_OK
 });
 const t10 = r10.calls.find((c) => c.url.indexOf("openid-connect/token") >= 0);
-ok("手填值覆盖 state 里的值", !!t10 && q(t10.body).code_verifier === "HAND-TYPED-10", t10 && t10.body);
+ok("使用一次性事务里的 verifier", !!t10 && q(t10.body).code_verifier === "FROM-TRANSACTION-10-abcdefghijklmnopqrstuvwxyz", t10 && t10.body);
 ok("照样登录成功", r10.notified.length === 1 && r10.notified[0].t === "WorkBuddy 登录成功", r10.notified);
 
 /* ---------- 场景 11：两边都没有 verifier → 明确让用户重新点一次登录 ---------- */
 const r11 = runCase("场景 11：没有 PKCE verifier（旧式手搓链接）", {
   argument: "login",
+  noTransaction: true,
   request: { url: "https://www.codebuddy.cn/auth/realms/copilot/account/?state=nostate&code=code-11" },
   token: () => ({ status: 400, data: { error: "invalid_grant", error_description: "Missing parameter: code_verifier" } }),
   api: () => { throw new Error("不该打签到接口"); }
 });
-ok("通知里明确要求回登录页重新点一次（而不是让用户去填 BoxJS）",
-  /PKCE verifier/.test(r11.notified[0].b) && /重新点一次/.test(r11.notified[0].b), r11.notified[0].b);
+ok("通知里明确拒绝无事务回调并要求重新登录",
+  /state 不匹配|登录事务/.test(r11.notified[0].b) && /重新登录/.test(r11.notified[0].b), r11.notified[0].b);
 ok("没有把没验证的令牌写进账号池", pool(r11.store).length === 0, pool(r11.store));
 
 /* ---------- 场景 12：BoxJS 交棒（不需要 MITM）：粘来的回调地址 → 自动换令牌 ---------- */
 const AT12 = jwt("uid-pickup-12", "手机号账号B", Math.floor((Date.now() + 40 * DAY) / 1000));
 const r12 = runCase("场景 12：BoxJS「登录回调地址」交棒，cron/手动跑时先换令牌", {
   // 注意：这里没有 argument（＝定时任务或手动运行那种空参调用），也没有 $request
-  store: { WorkBuddy_LoginCallback: "https://www.codebuddy.cn/auth/realms/copilot/account/?state=ab12cd34~VERIFIER-12&session_state=aa&code=code-12" },
-  token: (m, body) => (q(body).code_verifier === "VERIFIER-12" && q(body).code === "code-12"
+  store: { WorkBuddy_LoginCallback: "https://www.codebuddy.cn/auth/realms/copilot/account/?state=state-12&session_state=aa&code=code-12" },
+  verifier: "VERIFIER-12-abcdefghijklmnopqrstuvwxyz0123456789",
+  token: (m, body) => (q(body).code_verifier === "VERIFIER-12-abcdefghijklmnopqrstuvwxyz0123456789" && q(body).code === "code-12"
     ? { status: 200, data: { access_token: AT12, refresh_token: "RT-12", expires_in: 3600 } }
     : { status: 400, data: { error: "invalid_grant" } }),
   api: API_OK
 });
 const t12 = r12.calls.find((c) => c.url.indexOf("openid-connect/token") >= 0);
 ok("没有 $request 也能换令牌（走的正是脚本自己发请求这条路）",
-  !!t12 && q(t12.body).code === "code-12" && q(t12.body).code_verifier === "VERIFIER-12", t12 && t12.body);
+  !!t12 && q(t12.body).code === "code-12" && q(t12.body).code_verifier === "VERIFIER-12-abcdefghijklmnopqrstuvwxyz0123456789", t12 && t12.body);
 ok("令牌写入账号池", pool(r12.store).length === 1 && pool(r12.store)[0].uid === "uid-pickup-12", pool(r12.store));
 ok("换了令牌就不再顺便跑签到（本轮只做登录，避免半路 $done 打断）",
   r12.calls.filter((c) => c.url.indexOf("copilot.tencent.com") >= 0).length === 1,
@@ -283,7 +301,7 @@ ok("通知里告诉用户再点一次就能签到", /再点一次/.test(r12.noti
 
 /* ---------- 场景 13：交棒进来的 code 过期/无效 → 清空字段并说清楚 ---------- */
 const r13 = runCase("场景 13：交棒的回调地址换不了令牌（code 过期）", {
-  store: { WorkBuddy_LoginCallback: "https://www.codebuddy.cn/auth/realms/copilot/account/?state=ab~VER-13&code=expired-13" },
+  store: { WorkBuddy_LoginCallback: "https://www.codebuddy.cn/auth/realms/copilot/account/?state=state-13&code=expired-13" },
   token: () => ({ status: 400, data: { error: "invalid_grant", error_description: "Code not valid" } }),
   api: () => { throw new Error("不该打签到接口"); }
 });
@@ -297,7 +315,7 @@ ok("没有去碰签到接口", r13.calls.every((c) => c.url.indexOf("copilot.ten
 const r14 = runCase("场景 14：「登录回调地址」是垃圾值时不影响正常流程", {
   argument: "login",
   store: { WorkBuddy_LoginCallback: "随手打的字" },
-  request: { url: "https://www.codebuddy.cn/auth/realms/copilot/account/?state=ab~VER-14&code=code-14" },
+  request: { url: "https://www.codebuddy.cn/auth/realms/copilot/account/?state=state-14&code=code-14" },
   token: () => ({ status: 200, data: { access_token: jwt("uid-14", "账号14", Math.floor((Date.now() + 40 * DAY) / 1000)), expires_in: 3600 } }),
   api: API_OK
 });
