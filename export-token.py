@@ -11,9 +11,8 @@ WorkBuddy 令牌导出器 —— 把桌面端登录态导出成 Loon/BoxJS 需�
   - 明文凭据（旧版 / Linux CodeBuddy CLI）直接读出 accessToken
   - 新版 $wbEncrypted 信封走客户端原生解密子进程，与 signin.py 行为完全一致
 
-输出：一行 JSON，含 token / uid / enterpriseId / domain / endpoint。
-把 token 和 uid 填进 BoxJS 的 WorkBuddy 面板即可。脚本不会打印整条 token 的
-完整内容以外的任何密钥，也不会写任何文件。
+输出：一行 JSON，含 token / uid / enterpriseId / domain。
+把 token 和 uid 填进 BoxJS 的 WorkBuddy 面板即可。脚本不会写任何文件。
 """
 import json
 import os
@@ -48,15 +47,16 @@ def main():
         _fail("凭据里没有可用的 accessToken")
 
     account = (session.get("account") or {})
+    uid = headers.get("X-User-Id") or account.get("uid")
+    if not uid:
+        _fail("凭据里没有可用的 uid（X-User-Id）")
     out = {
-        "file": path,
         "token": auth.split(" ", 1)[1],
-        "uid": headers.get("X-User-Id") or account.get("uid"),
+        "uid": uid,
         "enterpriseId": headers.get("X-Enterprise-Id") or account.get("enterpriseId") or "",
         "domain": headers.get("X-Domain") or (session.get("auth") or {}).get("domain") or "",
-        "endpoint": (session.get("auth") or {}).get("endpoint") or "https://copilot.tencent.com",
     }
-    print(json.dumps(out, ensure_ascii=False, indent=2))
+    print(json.dumps(out, ensure_ascii=False, separators=(",", ":")))
     return 0
 
 
