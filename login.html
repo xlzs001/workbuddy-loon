@@ -64,7 +64,7 @@ textarea,input,select{width:100%;background:#090d16;color:var(--fg);border:1px s
 
 <details class="card recovery">
   <summary>登录没有自动返回？打开故障恢复</summary>
-  <p class="dim">正常流程不需要此步骤。仅当登录后停在 CodeBuddy 回调页时，复制地址栏中的完整 HTTPS 地址粘贴到这里。</p>
+  <p class="dim">正常流程不需要此步骤。若登录后停在 CodeBuddy 回调页，复制地址栏的完整 HTTPS 地址粘贴到这里；本机 Loon 会自动换取令牌并写入 BoxJS。请勿将地址分享给他人。</p>
   <textarea id="cb" placeholder="https://www.codebuddy.cn/auth/realms/copilot/account/?state=...&code=..."></textarea>
   <div class="row">
     <button class="btn sec" id="paste">粘贴地址</button>
@@ -231,17 +231,21 @@ function safeDecode(s) {
 }
 function parseCode(text) {
   text = String(text || "").trim();
-  if (!text) return { code: "", state: "", verifier: "", validUrl: false };
-  var validUrl = false;
+  var result = { code: "", state: "", validUrl: false, reason: "" };
+  if (!text) return result;
   try {
     var u = new URL(text);
-    validUrl = u.protocol === "https:" && u.hostname === "www.codebuddy.cn" &&
-      u.pathname === "/auth/realms/copilot/account/";
-  } catch (e) {}
-  var m = text.match(/[?&#]code=([^&#\s]+)/) || text.match(/^code=([^&#\s]+)/);
-  var s = text.match(/[?&#]state=([^&#\s]+)/);
-  var st = s ? safeDecode(s[1]) : "";
-  return { code: m ? safeDecode(m[1]) : "", state: st, validUrl: validUrl };
+    result.validUrl = u.protocol === "https:" && u.hostname === "www.codebuddy.cn" &&
+      (u.pathname === "/auth/realms/copilot/account" || u.pathname === "/auth/realms/copilot/account/");
+    if (!result.validUrl) {
+      result.reason = "当前地址为 " + u.hostname + u.pathname +
+        "；仅支持 www.codebuddy.cn/auth/realms/copilot/account（可带末尾斜杠）。";
+      return result;
+    }
+    result.code = u.searchParams.get("code") || "";
+    result.state = u.searchParams.get("state") || "";
+  } catch (e) { result.reason = "请输入以 https:// 开头的完整回调地址。"; }
+  return result;
 }
 
 function exchange(body) {
@@ -304,36 +308,43 @@ function showTokens(tok, client) {
 }
 
 $("ex").onclick = function () {
-  var p = parseCode($("cb").value);
-  if (!p.validUrl) { say($("exOut"), "err", "回调地址不是预期的 CodeBuddy HTTPS 地址，请复制完整地址栏 URL。"); return; }
-  if (!p.code) { say($("exOut"), "err", "没找到 code，把登录后那个完整的回调网址整段粘进来。"); return; }
+  var callback = String($("cb").value || "").trim();
+  var p = parseCode(callback);
+  if (!p.validUrl) { say($("exOut"), "err", esc(p.reason)); return; }
+  if (!p.code) { say($("exOut"), "err", "回调地址里没有 code，请重新开始安全登录。"); return; }
+  if (!p.state) { say($("exOut"), "err", "回调地址里没有 state，请重新开始安全登录。"); return; }
   var expectedState = TX.get("state");
-  var localVerifier = TX.get("verifier");
-  if (!expectedState || p.state !== expectedState || !localVerifier) {
-    say($("exOut"), "err", "state 与当前登录事务不匹配或已失效。请在本页重新点一次「用手机号登录」。");
+  if (expectedState && p.state !== expectedState) {
+    say($("exOut"), "err", "state 与本次登录不匹配，请重新开始安全登录。");
     return;
   }
-  var client = TX.get("client") || LS.get("client") || $("client").value || "account-console";
-  var body = { grant_type: "authorization_code", client_id: client, code: p.code, redirect_uri: REDIRECT };
-  var v = localVerifier;
-  body.code_verifier = v;
-  say($("exOut"), "dim", "正在换取令牌…");
-  exchange(body).then(function (tok) {
-    TX.clear();
-    say($("exOut"), "ok", "换到了 ✓");
-    showTokens(tok, client);
-  }).catch(function (err) {
-    TX.clear();
-    var t = String((err && err.message) || err);
-    if (/failed to fetch|load failed|networkerror|network request failed|typeerror/i.test(t)) {
-      say($("exOut"), "warn",
-        "浏览器把这次请求拦住了（跨域）：CodeBuddy 的令牌接口不给别的网站发跨域许可，所以这一页换不了令牌 —— 不是地址的问题。<br>" +
-        "改用手机上的 <b>BoxJS</b>：把上面这条 URL 粘进 WorkBuddy 应用里的「<b>登录回调地址</b>」并保存，" +
-        "再点「立即签到一轮（手动运行）」，由脚本在手机本地把 code 换成令牌（这条路同样不需要 MITM）。");
-    } else {
-      say($("exOut"), "err", esc(explain(err)));
+  $("ex").disabled = true;
+  say($("exOut"), "dim", "正在由本机 Loon 验证回调并写入 BoxJS…");
+  fetch("https://www.codebuddy.cn/wb-login/recover", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ callback: callback })
+  }).then(function (r) {
+    return r.text().then(function (text) {
+      var result = null;
+      try { result = JSON.parse(text); } catch (e) {}
+      if (!r.ok || !result || !result.kind) throw new Error("Loon 登录恢复规则未生效，请更新插件并确认 MITM 已开启。");
+      return result;
+    });
+  }).then(function (result) {
+    if (result.kind === "ok" || result.kind === "warn") {
+      TX.clear();
+      $("cb").value = "";
+      try { history.replaceState({}, "", location.pathname); } catch (e) {}
+      location.href = location.pathname + (result.kind === "ok" ? "?ok=1" : "?warn=1") +
+        "&name=" + encodeURIComponent(result.name || "账号") +
+        (result.kind === "warn" ? "&msg=" + encodeURIComponent(result.message || "签到接口未验证通过") : "");
+      return;
     }
-  });
+    say($("exOut"), "err", esc(result.message || "回调处理失败，请重新登录。"));
+  }).catch(function (err) {
+    say($("exOut"), "err", esc(String((err && err.message) || err)));
+  }).then(function () { $("ex").disabled = false; });
 };
 
 $("copyPool").onclick = function () {
