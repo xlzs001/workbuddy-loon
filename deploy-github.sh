@@ -13,7 +13,7 @@ set -euo pipefail
 OWNER="${GH_OWNER:-xlzs001}"
 REPO="${GH_REPO:-workbuddy-loon}"
 BRANCH="main"
-RELEASE_TAG="${RELEASE_TAG:-v1.2.0}"
+RELEASE_TAG="${RELEASE_TAG:-v1.2.1}"
 cd "$(dirname "$0")"
 
 step() { printf '\n\033[1m→ %s\033[0m\n' "$1"; }

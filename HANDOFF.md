@@ -3,17 +3,17 @@
 ## 1. 项目概况
 
 - 仓库：`xlzs001/workbuddy-loon`
-- 当前交接版本：`v1.2.0`
+- 当前交接版本：`v1.2.1`
 - 运行端：Loon / Surge / QuantumultX / BoxJS
 - 核心脚本：`workbuddy.js`
 - 主要目标：在手机端自动完成 WorkBuddy 登录取令牌、每日签到、成长中心任务、多账号运行和令牌续期。
 
-### v1.2.0 交付状态
+### v1.2.1 交付状态
 
-- 手机登录页已改为“一键安全登录”主流程。
-- 登录后自动换取、验证并保存令牌，无需复制地址或账号池 JSON。
-- 手工粘贴回调仅保留为折叠式故障恢复。
-- `WorkBuddy.plugin`、`boxjs.json` 和文档统一固定到 `v1.2.0`。
+- 手机登录页保持“一键安全登录”主流程。
+- 自动回调与手工恢复兼容 `/account` 和 `/account/` 两种路径。
+- 手工恢复由本机 Loon 校验事务、换取令牌并直接保存到 BoxJS，无需再复制账号池 JSON。
+- `WorkBuddy.plugin`、`boxjs.json` 和文档统一固定到 `v1.2.1`。
 - 四组 Node mock 测试、JavaScript 语法检查、Python 编译和页面内联一致性检查均已通过。
 
 ## 2. 目录与职责
@@ -133,15 +133,15 @@ node tests/workbuddy-page.test.js
 node tests/workbuddy-regression.test.js
 git add -A
 git commit -m "feat: automate mobile login flow"
-git tag v1.2.0
+git tag v1.2.1
 git push origin main
-git push origin v1.2.0
+git push origin v1.2.1
 ```
 
 发布后检查：
 
 - `main` 指向新提交；
-- `v1.2.0` 指向同一提交；
+- `v1.2.1` 指向同一提交；
 - 标签下的 `workbuddy.js`、`WorkBuddy.plugin`、`boxjs.json` 可访问；
 - Loon 更新插件后能打开登录页并建立 `/wb-login/session` 事务。
 
@@ -150,7 +150,7 @@ git push origin v1.2.0
 | 现象 | 检查项 |
 |---|---|
 | 登录页打不开 | 插件是否更新；MITM 是否开启；证书是否信任；hostname 是否含 `www.codebuddy.cn` |
-| 点击登录后提示无法连接本机服务 | `/wb-login/session` 规则未命中或 `v1.2.0` 脚本不可达 |
+| 点击登录后提示无法连接本机服务 | `/wb-login/session` 规则未命中或 `v1.2.1` 脚本不可达 |
 | 登录后出现 IP not allowed JSON | OAuth 回调规则未命中；检查 `WorkBuddy手机登录` 规则和 MITM |
 | state 不匹配/事务过期 | 回到登录页重新开始；不要复用旧回调地址 |
 | `invalid_grant: Code not valid` | code 已使用或超过有效期，重新登录 |

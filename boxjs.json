@@ -15,17 +15,17 @@
         "https://raw.githubusercontent.com/88lin/workbuddy-auto-signin/main/assets/cover.jpg"
       ],
       "description": "自动领取 WorkBuddy 每日签到积分与成长中心奖励，支持多账号。手机端只需完成手机号验证，插件会自动获取、校验并保存可续期令牌。",
-      "script": "https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.2.0/workbuddy.js",
+      "script": "https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.2.1/workbuddy.js",
       "script_timeout": 600,
       "scripts": [
         {
           "name": "立即签到一轮（手动运行）",
-          "script": "https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.2.0/workbuddy.js",
+          "script": "https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.2.1/workbuddy.js",
           "script_timeout": 600
         },
         {
           "name": "立即签到一轮（备用线路 jsDelivr，主线路拉不动时用）",
-          "script": "https://cdn.jsdelivr.net/gh/xlzs001/workbuddy-loon@v1.2.0/workbuddy.js",
+          "script": "https://cdn.jsdelivr.net/gh/xlzs001/workbuddy-loon@v1.2.1/workbuddy.js",
           "script_timeout": 600
         }
       ],

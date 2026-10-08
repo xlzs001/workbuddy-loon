@@ -64,7 +64,7 @@ textarea,input,select{width:100%;background:#090d16;color:var(--fg);border:1px s
 
 <details class="card recovery">
   <summary>登录没有自动返回？打开故障恢复</summary>
-  <p class="dim">正常流程不需要此步骤。仅当登录后停在 CodeBuddy 回调页时，复制地址栏中的完整 HTTPS 地址粘贴到这里。</p>
+  <p class="dim">正常流程不需要此步骤。仅当登录后停在 CodeBuddy 回调页时，复制地址栏中的完整 HTTPS 地址粘贴到这里；由本机 Loon 换取并保存令牌。</p>
   <textarea id="cb" placeholder="https://www.codebuddy.cn/auth/realms/copilot/account/?state=...&code=..."></textarea>
   <div class="row">
     <button class="btn sec" id="paste">粘贴地址</button>
@@ -236,7 +236,7 @@ function parseCode(text) {
   try {
     var u = new URL(text);
     validUrl = u.protocol === "https:" && u.hostname === "www.codebuddy.cn" &&
-      u.pathname === "/auth/realms/copilot/account/";
+      (u.pathname === "/auth/realms/copilot/account" || u.pathname === "/auth/realms/copilot/account/");
   } catch (e) {}
   var m = text.match(/[?&#]code=([^&#\s]+)/) || text.match(/^code=([^&#\s]+)/);
   var s = text.match(/[?&#]state=([^&#\s]+)/);
@@ -313,26 +313,25 @@ $("ex").onclick = function () {
     say($("exOut"), "err", "state 与当前登录事务不匹配或已失效。请在本页重新点一次「用手机号登录」。");
     return;
   }
-  var client = TX.get("client") || LS.get("client") || $("client").value || "account-console";
-  var body = { grant_type: "authorization_code", client_id: client, code: p.code, redirect_uri: REDIRECT };
-  var v = localVerifier;
-  body.code_verifier = v;
-  say($("exOut"), "dim", "正在换取令牌…");
-  exchange(body).then(function (tok) {
+  say($("exOut"), "dim", "正在由本机 Loon 换取并保存令牌…");
+  fetch("https://www.codebuddy.cn/wb-login/recover", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ callback: $("cb").value.trim() })
+  }).then(function (r) {
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    return r.json();
+  }).then(function (result) {
+    if (result.kind === "err") throw new Error(result.message || "换令牌失败");
     TX.clear();
-    say($("exOut"), "ok", "换到了 ✓");
-    showTokens(tok, client);
-  }).catch(function (err) {
-    TX.clear();
-    var t = String((err && err.message) || err);
-    if (/failed to fetch|load failed|networkerror|network request failed|typeerror/i.test(t)) {
-      say($("exOut"), "warn",
-        "浏览器把这次请求拦住了（跨域）：CodeBuddy 的令牌接口不给别的网站发跨域许可，所以这一页换不了令牌 —— 不是地址的问题。<br>" +
-        "改用手机上的 <b>BoxJS</b>：把上面这条 URL 粘进 WorkBuddy 应用里的「<b>登录回调地址</b>」并保存，" +
-        "再点「立即签到一轮（手动运行）」，由脚本在手机本地把 code 换成令牌（这条路同样不需要 MITM）。");
+    if (result.kind === "ok") {
+      say($("exOut"), "ok", "配置完成：" + esc(result.name || "账号") + " 已写入 BoxJS 账号池。");
     } else {
-      say($("exOut"), "err", esc(explain(err)));
+      say($("exOut"), "warn", "令牌已写入 BoxJS，但签到接口未验证通过：" + esc(result.message || "请手动检查"));
     }
+  }).catch(function (err) {
+    say($("exOut"), "err", "自动恢复失败：" + esc(String((err && err.message) || err)) +
+      "。请确认 Loon 的登录恢复规则生效；回调 code 过期时需重新登录。");
   });
 };
 

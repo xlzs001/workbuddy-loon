@@ -28,7 +28,7 @@
 1. 在 Loon 中安装插件：
 
    ```text
-   https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.2.0/WorkBuddy.plugin
+   https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.2.1/WorkBuddy.plugin
    ```
 
 2. 打开并信任 Loon MITM 证书，确认 hostname 包含 `www.codebuddy.cn`。
@@ -121,7 +121,7 @@ https://www.codebuddy.cn/wb-login
 
 正常情况下只有一条路径：**最新版 Loon 插件 + 自动登录页**。Loon 在回调时自动把 `code` 换成令牌、验证可用性、写入 BoxJS 账号池，再用 `302` 把浏览器送回结果页。PKCE verifier 只保存在 10 分钟有效的一次性事务中，不进入 URL，事务在回调时立即消费。
 
-如果回调规则未命中，页面底部保留了折叠的“故障恢复”入口：可粘贴完整 CodeBuddy HTTPS 回调地址继续处理。它只是应急方案，不是正常登录步骤。
+如果回调规则未命中，页面底部保留了折叠的“故障恢复”入口：可粘贴完整 CodeBuddy HTTPS 回调地址，由本机 Loon 校验一次性事务、换取令牌并直接写入 BoxJS；兼容 `/account` 和 `/account/`。它只是应急方案，不是正常登录步骤；请勿分享含 `code` 的地址。
 
 这样拿到的令牌带 `refresh_token`，**脚本每轮会自己续期**，基本一次登录管很久。
 
@@ -203,11 +203,11 @@ git remote add origin https://github.com/xlzs001/workbuddy-loon.git
 git branch -M main && git push -u origin main
 ```
 
-修复后先提交并创建不可变版本标签（当前配置为 `v1.2.0`），再推送分支与标签；生产插件不会自动追踪可变的 `main`。
+修复后先提交并创建不可变版本标签（当前配置为 `v1.2.1`），再推送分支与标签；生产插件不会自动追踪可变的 `main`。
 嫌 raw.githubusercontent.com 慢可以用 jsDelivr 包一层（同步有延迟，插件地址不用改）：
 
 ```
-https://cdn.jsdelivr.net/gh/xlzs001/workbuddy-loon@v1.2.0/workbuddy.js
+https://cdn.jsdelivr.net/gh/xlzs001/workbuddy-loon@v1.2.1/workbuddy.js
 ```
 
 > 想换仓库：把 `WorkBuddy.plugin` 与 `boxjs.json` 里全部 `xlzs001/workbuddy-loon` 替换掉即可。
@@ -217,9 +217,9 @@ https://cdn.jsdelivr.net/gh/xlzs001/workbuddy-loon@v1.2.0/workbuddy.js
 1. **安装 BoxJS**（没装过的话）：Loon → 配置 → 插件 → 添加
    `https://raw.githubusercontent.com/chavyleung/scripts/master/box/rewrite/boxjs.rewrite.loon.plugin`
 2. **添加签到插件**：Loon → 配置 → 插件 → 添加 →
-   `https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.2.0/WorkBuddy.plugin` → 打开开关
+   `https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.2.1/WorkBuddy.plugin` → 打开开关
 3. **添加 BoxJS 订阅**：打开 BoxJS 网页/App → 订阅 → 添加
-   `https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.2.0/boxjs.json`
+   `https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.2.1/boxjs.json`
 4. **填令牌**：BoxJS → 应用 → 「WorkBuddy 自动签到」 →
    多账号：粘贴到 **「账号池」**；单账号：填 `accessToken` 与 `uid`
    （`enterpriseId` / `domain` 仅企业账号需要）→ **点右下角蓝色浮动按钮保存**，
