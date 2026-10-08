@@ -5,7 +5,7 @@
  * 这里保证三件事：
  *   1. PAGE_HTML 和磁盘上的 login.html 完全一致（改了页面忘了跑 build-page.py 会当场报错）
  *   2. 真的回了 200 + text/html，body 就是那份 HTML（不是被转义过的字符串）
- *   3. 页面里的关键元素都在（结果横幅、PKCE 默认关闭、同源不落盤的存储守卫）
+ *   3. 页面里的关键元素都在（全自动主流程、结果横幅、PKCE 安全事务、故障恢复入口）
  *
  * 跑法：node tests/workbuddy-page.test.js
  */
@@ -58,15 +58,21 @@ ok("日志里写了 HTML 字节数", logs.some((l) => /输出登录页：HTML \d
 
 console.log("\n=== 页面关键元素 ===");
 ok("有结果横幅容器", HTML.indexOf('id="banner"') > 0);
-ok("有 ✅/⚠️/❌ 三种回跳文案",
-  HTML.indexOf("✅ 登录成功") > 0 && HTML.indexOf("⚠️ 令牌已写入") > 0 && HTML.indexOf("❌ 登录没有完成") > 0);
-ok("PKCE 强制开启（account-console 服务端要求，页面已无「关闭」选项）",
-  HTML.indexOf("code_challenge_method=S256") > 0 && HTML.indexOf("<option value=\"0\" selected>关闭") < 0 &&
-  HTML.indexOf("强制开启") > 0);
+ok("有成功、警告、失败三种回跳文案",
+  HTML.indexOf("全部配置完成") > 0 && HTML.indexOf("令牌已自动保存") > 0 && HTML.indexOf("登录没有完成") > 0);
+ok("主流程明确为全自动且无需复制",
+  HTML.indexOf("后续获取令牌、校验账号、写入账号池和启用自动续期全部自动完成") > 0 &&
+  HTML.indexOf("无需复制地址、令牌或打开 BoxJS") > 0);
+ok("手工粘贴只保留在故障恢复折叠区",
+  HTML.indexOf('<details class="card recovery">') > 0 && HTML.indexOf("登录没有自动返回？打开故障恢复") > 0);
+ok("PKCE 强制开启（account-console 服务端要求，页面已无关闭选项）",
+  HTML.indexOf('"code_challenge_method=S256"') > 0 &&
+  HTML.indexOf('"code_challenge=" + ch') > 0 &&
+  HTML.indexOf("<option value=\"0\" selected>关闭") < 0);
 ok("PKCE verifier 不进入回调 URL，并通过一次性登录事务保存",
   HTML.indexOf('var state = rand(32)') > 0 && HTML.indexOf('TX.set("verifier", verifier)') > 0 &&
   HTML.indexOf('state = rand(16) + "~" + verifier') < 0);
-ok("有「登录完没有任何提示？看这里」排错块", HTML.indexOf("登录完没有任何提示") > 0);
+ok("故障恢复入口默认折叠且不干扰一键登录", HTML.indexOf("登录没有自动返回？打开故障恢复") > 0);
 ok("refresh token 不写入 localStorage",
   HTML.indexOf('localStorage.setItem("wb_" + k, v)') < 0 && HTML.indexOf("var MEM = {}") > 0);
 ok("仍指向正确的 realm / 公开客户端",

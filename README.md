@@ -1,28 +1,48 @@
-# WorkBuddy 自动签到 → Loon / BoxJS 版
+# WorkBuddy 自动签到（Loon / BoxJS）
 
-把 [88lin/workbuddy-auto-signin](https://github.com/88lin/workbuddy-auto-signin) 的签到 + 成长中心逻辑搬到手机上跑：
-Loon 定时触发、BoxJS 存令牌看结果，不用开着电脑。
+在 iPhone 上完成 WorkBuddy 每日签到、成长中心任务与多账号管理。Loon 负责定时执行，BoxJS 保存配置和运行结果，无需电脑常驻。
 
-## 0. 先说清楚能不能直接部署
+## 核心能力
 
-`signin.py` **不能**直接放进 BoxJS 或 Loon，原因有三条，都是硬性的：
+- **手机全自动登录**：只需完成手机号验证，自动换取令牌、校验账号并写入 BoxJS。
+- **自动续期**：手机登录获得的 refresh token 会在到期前自动刷新。
+- **完整成长中心流程**：签到、旅行礼物、派 Buddy、任务领奖、补登、连登兑换与盲盒。
+- **多账号运行**：账号隔离、重复检测、过期跳过、统一预算和逐账号结果汇总。
+- **安全设计**：PKCE S256、一次性登录事务、严格回调校验；令牌不会进入 URL 或浏览器持久存储。
+- **异常可见**：网络、认证、权限、业务失败和临期令牌均有明确状态与通知。
 
-| 依赖 | signin.py 需要 | BoxJS / Loon 提供 |
-|---|---|---|
-| Python 运行时 | Python 3 | 只有 JavaScriptCore，没有 Python |
-| 凭据文件 | 读本机 `workbuddy-desktop.info` | 脚本跑在手机上，没有文件系统，更没有桌面端的凭据文件 |
-| 加密凭据解密 | 起客户端原生子进程解密 `$wbEncrypted` | 手机上没装桌面端，无法解密 |
+## 工作方式
 
-所以本项目的做法是**换一层壳，而不是搬运脚本**：
-
+```text
+手机号验证
+  → Loon 接管 OAuth 回调
+  → 自动换取并验证令牌
+  → 写入 BoxJS 账号池
+  → 定时签到与自动续期
 ```
-桌面端导出一次令牌 ──► BoxJS 保存 token / uid ──► Loon cron 跑 workbuddy.js（纯 JS 重写）──► 通知 + BoxJS 记录结果
-```
 
-接口、参数、幂等策略、补登规则、连登档位标识（`"7d"/"14d"/"28d"`）全部按 `signin.py` 1:1 移植，
-端点是 `https://copilot.tencent.com`，请求头与桌面端一致（`Authorization: Bearer` + `X-User-Id`）。
+本项目基于 [88lin/workbuddy-auto-signin](https://github.com/88lin/workbuddy-auto-signin) 的业务流程进行 JavaScript 重写，以适配 Loon / Surge / QuantumultX 的 JavaScriptCore 环境。
 
-## 1. 文件清单
+## 快速开始
+
+1. 在 Loon 中安装插件：
+
+   ```text
+   https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.2.0/WorkBuddy.plugin
+   ```
+
+2. 打开并信任 Loon MITM 证书，确认 hostname 包含 `www.codebuddy.cn`。
+3. 打开登录页：
+
+   ```text
+   https://www.codebuddy.cn/wb-login
+   ```
+
+4. 点击“开始安全登录”，完成手机号验证。页面显示“全部配置完成”后即可关闭。
+
+默认任务：每天 `00:05` 执行完整签到，每 4 小时轮询成长中心。
+
+## 文件清单
 
 | 文件 | 作用 |
 |---|---|
@@ -38,6 +58,7 @@ Loon 定时触发、BoxJS 存令牌看结果，不用开着电脑。
 | `tests/workbuddy-login.test.js` | Node mock 测试：手机登录换令牌、BoxJS 交棒、自动续期、PKCE、续期失败等 14 个场景 |
 | `tests/workbuddy-page.test.js` | Node mock 测试：登录页内联是否与 `login.html` 字节级一致、回的是不是 200 + text/html |
 | `tests/workbuddy-regression.test.js` | 缺陷回归测试：存储兼容性、HTTP 错误、账号池 URL 与 OAuth 事务校验 |
+| `HANDOFF.md` | 维护交接：架构、登录链路、配置键、测试、发布与故障恢复 |
 
 跑测试（需要 Node，与 Loon 无关；两个文件都应全绿）：
 
@@ -48,15 +69,15 @@ node tests/workbuddy-page.test.js     # 登录页内联，✓ 全部断言通过
 node tests/workbuddy-regression.test.js # 缺陷回归：存储/HTTP/OAuth/账号池 URL
 ```
 
-## 2. 部署三步
+## 登录与部署
 
 ### 第 1 步 · 拿令牌
 
-三条路，**能碰手机就走 C**（不用电脑，而且只有它能自动续期；安全登录事务需要最新版 Loon 插件）。
+三条路，**优先使用手机全自动登录**（不用电脑，而且只有它能自动续期；需要最新版 Loon 插件）。
 
-#### C. 手机登录（推荐，不用电脑）
+#### C. 手机全自动登录（推荐）
 
-手机浏览器打开（或直接点 BoxJS → 应用 → WorkBuddy 自动签到 → 页面上的「📱 手机登录 / 续期」按钮）：
+手机浏览器打开（或直接点 BoxJS → 应用 → WorkBuddy 自动签到 → 页面上的「📱 一键安全登录」按钮）：
 
 ```
 https://www.codebuddy.cn/wb-login
@@ -68,18 +89,24 @@ https://www.codebuddy.cn/wb-login
 走本插件的 MITM（登录回调也要），所以**只要 Loon 通，这一页就一定打得开**。
 
 > 备用地址（需能访问 GitHub Pages）：`https://xlzs001.github.io/workbuddy-loon/login.html`
-> —— 同一份 `login.html`。两个入口都只把敏感令牌保存在当前页面内存中，刷新或关闭后自动清除；需要复用时请立即复制到 BoxJS。
+> —— 同一份页面，但仍需最新版 Loon 插件建立一次性安全事务并接管回调。
 
-点「用手机号登录」→ 走 CodeBuddy 官方登录页（手机号 + 验证码）→ 登录完成后，
-**装了插件的话浏览器会自动跳回登录页，并在页面顶部显示结果横幅**：
+点「开始安全登录」→ 完成 CodeBuddy 手机号验证。随后浏览器会自动返回，脚本自动完成：
+
+1. 用一次性 PKCE 事务换取令牌；
+2. 验证账号和签到接口；
+3. 写入 BoxJS 账号池；
+4. 保存 refresh token，后续自动续期。
+
+整个正常流程**不需要复制地址、令牌或账号池 JSON，也不需要手动打开 BoxJS**。页面顶部会显示最终结果：
 
 | 横幅 | 含义 | 你要做什么 |
 | --- | --- | --- |
-| ✅ 登录成功 | 令牌已写进 BoxJS 账号池，签到接口验证通过 | 什么都不用做，以后脚本自动续期 |
-| ⚠️ 令牌已写入，但签到接口不认 | 令牌进池了，但签到接口拒绝（401/403 等） | 先在 BoxJS 手动跑一轮；确实不行就删掉这条 |
-| ❌ 登录没有完成 | 换令牌失败（`code` 过期、缺 verifier、PKCE 参数不全…），原因直接写在横幅里 | 回第 ① 步重登一次（页面强制 PKCE S256，重登即带上新 verifier） |
+| 全部配置完成 | 令牌已写进 BoxJS 账号池，签到接口验证通过 | 什么都不用做，以后脚本自动续期 |
+| 令牌已自动保存，需要检查账号 | 令牌进池了，但签到接口拒绝（401/403 等） | 先在 BoxJS 手动跑一轮；确实不行就删掉这条 |
+| 登录没有完成 | 换令牌失败或安全事务过期，原因直接写在页面里 | 点击「重新安全登录」即可 |
 
-横幅上的「打开 BoxJS 看看」直接跳 BoxJS，「再登录一个账号」等于把这一页重开（方便连登多个号）。
+结果页可查看 BoxJS 或继续连接另一个账号。
 同时 Loon 与 BoxJS 各会收到一条通知；**旧版插件不会有这个回跳**，那时看通知或按第 6 节排错。
 
 > **为什么回调非要 Loon 拦不可**：回调地址落在 `https://www.codebuddy.cn/auth/realms/copilot/account/`，
@@ -90,23 +117,11 @@ https://www.codebuddy.cn/wb-login
 > 所以这条请求一旦漏给线上，用户看到的就是那段看不懂的 JSON —— 插件现在把**整段 `/account/` 前缀**
 > 都拦下（不只是带 `code=` 的那种），成功与失败（`?error=…`）都会跳回登录页把原因说清楚。
 >
-> 万一还是看到了那段 JSON：**地址栏里的 URL 依然带着 `code=`**，把它整段复制到第 ② 步照样能换到令牌
-> （`code` 只有约 1 分钟有效期）。
+> 万一仍看到那段 JSON，可返回登录页打开“故障恢复”，粘贴地址栏中的完整 HTTPS 回调地址继续处理（`code` 只有约 1 分钟有效期）。
 
-三条路径（从最省事到最折腾）：
+正常情况下只有一条路径：**最新版 Loon 插件 + 自动登录页**。Loon 在回调时自动把 `code` 换成令牌、验证可用性、写入 BoxJS 账号池，再用 `302` 把浏览器送回结果页。PKCE verifier 只保存在 10 分钟有效的一次性事务中，不进入 URL，事务在回调时立即消费。
 
-- **① BoxJS 交棒（推荐，需要最新版插件建立一次性事务，但不要求回调被自动拦下）**：在任一登录页点「用手机号登录」→ 输手机号 + 验证码 → 点登录。
-  登录完**页面停在哪儿都无所谓**（可能是一段 `{"message":"Your IP address is not allowed"}`，也可能一直转圈），
-  只要**地址栏那条 URL 里带着 `code=`**：整段复制 → 回到 BoxJS → WorkBuddy 应用 → 「**登录回调地址**」→ 粘贴 → 点右下角蓝色按钮保存 →
-  再点「**立即签到一轮（手动运行）**」。最新版插件会在登录开始前保存 10 分钟有效的一次性 PKCE 事务；脚本校验 state 后在手机本地换令牌、验证签到并写入账号池。
-  换完（或失败）回调地址与一次性事务都会自动清空。该流程需要最新版 Loon 插件来建立安全事务。
-  `code` 只有约 **1 分钟**有效期，粘完马上点。
-- **② 装了插件的 MITM（全自动）**：Loon 在回调那一跳里把 `code` 换成令牌、验证可用、写进 BoxJS 账号池，
-  再回一个 `302` 把浏览器送回登录页 —— 所以**成功、失败都看得见**。PKCE 不用管：`account-console` 强制 PKCE(S256)，登录页会先把 verifier 与随机 state 保存为 10 分钟有效的一次性事务；回调只带 state，脚本校验并消费事务后再换令牌，verifier 不进入 URL。
-- **③ 在页面上直接换令牌（只有 Loon 吐出来的那份 `wb-login` 才行）**：实测 `account-console` 的令牌接口
-  **不给跨域许可**（预检 `OPTIONS` 带 `access-control-allow-origin`，但真正的 `POST` 响应**没有**这个头），
-  所以从 `github.io` 那份 Pages 页面上点「换取令牌」可能被浏览器拦下（`Load failed` / `Failed to fetch`）——
-  这不是地址的问题，换令牌请走 ① 或 ②。`wb-login` 那一页与 codebuddy 同源，可直接换取。
+如果回调规则未命中，页面底部保留了折叠的“故障恢复”入口：可粘贴完整 CodeBuddy HTTPS 回调地址继续处理。它只是应急方案，不是正常登录步骤。
 
 这样拿到的令牌带 `refresh_token`，**脚本每轮会自己续期**，基本一次登录管很久。
 
@@ -115,8 +130,6 @@ https://www.codebuddy.cn/wb-login
 > 所以：**不想再碰电脑就用 C，想要多账号批量就用 A**。
 
 #### A. 多账号（切号工具，需要电脑）
-
-#### A. 多账号（推荐）
 
 如果你用切号工具管理多个账号（导出的文件长这样：顶层数组，元素带
 `access_token` / `uid` / `nickname` / `profile_raw`），直接压缩一下就能用：
@@ -190,11 +203,11 @@ git remote add origin https://github.com/xlzs001/workbuddy-loon.git
 git branch -M main && git push -u origin main
 ```
 
-修复后先提交并创建不可变版本标签（当前配置为 `v1.1.0`），再推送分支与标签；生产插件不会自动追踪可变的 `main`。
+修复后先提交并创建不可变版本标签（当前配置为 `v1.2.0`），再推送分支与标签；生产插件不会自动追踪可变的 `main`。
 嫌 raw.githubusercontent.com 慢可以用 jsDelivr 包一层（同步有延迟，插件地址不用改）：
 
 ```
-https://cdn.jsdelivr.net/gh/xlzs001/workbuddy-loon@v1.1.0/workbuddy.js
+https://cdn.jsdelivr.net/gh/xlzs001/workbuddy-loon@v1.2.0/workbuddy.js
 ```
 
 > 想换仓库：把 `WorkBuddy.plugin` 与 `boxjs.json` 里全部 `xlzs001/workbuddy-loon` 替换掉即可。
@@ -204,9 +217,9 @@ https://cdn.jsdelivr.net/gh/xlzs001/workbuddy-loon@v1.1.0/workbuddy.js
 1. **安装 BoxJS**（没装过的话）：Loon → 配置 → 插件 → 添加
    `https://raw.githubusercontent.com/chavyleung/scripts/master/box/rewrite/boxjs.rewrite.loon.plugin`
 2. **添加签到插件**：Loon → 配置 → 插件 → 添加 →
-   `https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.1.0/WorkBuddy.plugin` → 打开开关
+   `https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.2.0/WorkBuddy.plugin` → 打开开关
 3. **添加 BoxJS 订阅**：打开 BoxJS 网页/App → 订阅 → 添加
-   `https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.1.0/boxjs.json`
+   `https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.2.0/boxjs.json`
 4. **填令牌**：BoxJS → 应用 → 「WorkBuddy 自动签到」 →
    多账号：粘贴到 **「账号池」**；单账号：填 `accessToken` 与 `uid`
    （`enterpriseId` / `domain` 仅企业账号需要）→ **点右下角蓝色浮动按钮保存**，
@@ -346,11 +359,11 @@ cron 的 `timeout` 同步提到 960。
 | 通知 `AUTH_ERROR / 令牌已失效（HTTP 401）` | 令牌过期或凭据与账号不匹配（等同密码错误）→ 去手机登录页重登一次（或重跑 `accounts-slim.py` / `export-token.py`） |
 | 通知 `AUTH_REJECTED / HTTP 403 权限被拒绝` | 令牌本身有效但服务端拒绝：账号未开通 / 被风控 / 企业账号权限不足，先确认账号状态 |
 | 以后所有请求都 401 | 桌面端退出登录过、或换了账号，重新登录/导出即可 |
-| 登录后浏览器只显示 `{"message":"Your IP address is not allowed"}` | 这是 codebuddy 网关对 `/account/**` 的来源限制，说明**这次回调没被 Loon 拦到**（插件没更新 / MITM 关着 / 规则被删）：更新插件，确认有 `WorkBuddy手机登录` 这条且 `[MITM]` hostname 含 `www.codebuddy.cn`。救急：地址栏那条 URL 仍带 `code=`，整段复制到 BoxJS 的「登录回调地址」再点「立即签到一轮」，照样能换到令牌（1 分钟内） |
-| 手机登录后没有通知、也没回跳登录页 | ① 确认插件里有 `WorkBuddy手机登录` 这条规则（插件要**更新一次**）、`[MITM]` 的 hostname 含 `www.codebuddy.cn`、且 Loon 的 MITM 开关和证书都正常；② 没走 Loon 就把回调 URL 粘进 BoxJS 的「登录回调地址」，再点「立即签到一轮（手动运行）」（不需要 MITM）；③ `code` 只有约 1 分钟有效期，超时重登 |
-| 登录换令牌报 `invalid_grant: Code not valid` | 那个 `code` 已经用过或超过约 1 分钟：重新点一次登录，回调 URL 要当场粘贴 |
+| 登录后浏览器只显示 `{"message":"Your IP address is not allowed"}` | OAuth 回调没有被 Loon 接管。更新插件，确认有 `WorkBuddy手机登录` 规则、MITM 已开启并信任证书、hostname 含 `www.codebuddy.cn`；应急时回登录页打开“故障恢复”粘贴完整回调地址 |
+| 手机登录后没有通知、也没回跳登录页 | 检查插件版本、`WorkBuddy手机登录` 规则、MITM 开关/证书和 hostname；`code` 约 1 分钟有效，超时后重新开始安全登录 |
+| 登录换令牌报 `invalid_grant: Code not valid` | code 已使用或过期，回到登录页重新开始安全登录 |
 | 登录报 `unauthorized_client` | `WorkBuddy_LoginClient` 被改成了机密客户端（如 `console`）→ 填回 `account-console` |
-| 在 Pages 登录页上点「换取令牌」报 `Load failed` / `Failed to fetch` | 浏览器跨域被拦：CodeBuddy 的令牌接口**不给跨域许可**（预检 `OPTIONS` 有 `access-control-allow-origin`，真正的 `POST` 响应没有）—— 不是地址的问题。改用手机上的 BoxJS：把回调 URL 粘进「**登录回调地址**」→ 保存 → 点「立即签到一轮（手动运行）」，由脚本在手机本地换令牌（不需要 MITM） |
+| 备用 Pages 页面无法自动完成 | 备用页面仍依赖最新版 Loon 插件建立事务并接管回调；优先使用 `https://www.codebuddy.cn/wb-login` |
 | 续期报 `Token client and authorized client don't match` | 这条令牌是电脑端导出的，续不了；用手机登录页重登一次，让它带 `client` 字段 |
 | 只有一部分账号跑到了 | 看通知末尾的 `已跳过（原因）`：过期 / 缺 uid / 重复都会被点名；`总预算耗尽，本轮跳过` 则调大 `WorkBuddy_Budget` |
 | 配了账号池 URL 却报拉取失败 | 确认地址能从手机直接访问（HTTPS、无鉴权页）；失败时会自动用本地缓存，报告里会注明 |

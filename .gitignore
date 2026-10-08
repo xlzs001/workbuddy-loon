@@ -11,4 +11,7 @@ Tencent-Cloud.coding-copilot.info
 # 本地脚本副本 / 编辑器杂物
 *.log
 .DS_Store
+__pycache__/
+*.py[cod]
+$null
 node_modules/

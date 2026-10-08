@@ -14,18 +14,18 @@
       "icons": [
         "https://raw.githubusercontent.com/88lin/workbuddy-auto-signin/main/assets/cover.jpg"
       ],
-      "description": "自动领取 WorkBuddy 每日签到积分与成长中心全部奖励，支持多账号。令牌可以手机登录直接获取（点上面的按钮），也可以由桌面端导出，或由插件的 MITM 脚本自动保鲜。",
-      "script": "https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.1.0/workbuddy.js",
+      "description": "自动领取 WorkBuddy 每日签到积分与成长中心奖励，支持多账号。手机端只需完成手机号验证，插件会自动获取、校验并保存可续期令牌。",
+      "script": "https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.2.0/workbuddy.js",
       "script_timeout": 600,
       "scripts": [
         {
-          "name": "立即签到一轮（手动运行；粘了「登录回调地址」时会先换令牌）",
-          "script": "https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.1.0/workbuddy.js",
+          "name": "立即签到一轮（手动运行）",
+          "script": "https://raw.githubusercontent.com/xlzs001/workbuddy-loon/v1.2.0/workbuddy.js",
           "script_timeout": 600
         },
         {
           "name": "立即签到一轮（备用线路 jsDelivr，主线路拉不动时用）",
-          "script": "https://cdn.jsdelivr.net/gh/xlzs001/workbuddy-loon@v1.1.0/workbuddy.js",
+          "script": "https://cdn.jsdelivr.net/gh/xlzs001/workbuddy-loon@v1.2.0/workbuddy.js",
           "script_timeout": 600
         }
       ],
@@ -72,12 +72,12 @@
         },
         {
           "id": "WorkBuddy_LoginCallback",
-          "name": "登录回调地址（手机登录换令牌用，粘一次就清掉）",
+          "name": "登录回调地址（仅故障恢复）",
           "val": "",
           "type": "textarea",
           "autoGrow": true,
           "rows": 4,
-          "desc": "不需要 MITM 的登录方式：在登录页点「用手机号登录 CodeBuddy」→ 输手机号 + 验证码 → 点登录，浏览器会停在一条 https://www.codebuddy.cn/auth/realms/copilot/account/?...&code=... 的地址上（屏幕上可能只有一段报错 JSON，不影响）。把地址栏那条 URL 整段复制粘到这里 → 保存 → 再点下面的「立即签到一轮（手动运行）」，脚本会在手机本地把 code 换成令牌并写进账号池，同时通知你结果。code 只有约 1 分钟有效期，粘完马上点。换完（或失败）这里会被自动清空。"
+          "desc": "正常全自动登录无需填写。仅当登录后没有自动返回时，把完整的 CodeBuddy HTTPS 回调地址粘到这里并保存，再运行一次手动签到。脚本仍会校验登录前建立的一次性 state；处理后自动清空。"
         },
         {
           "id": "WorkBuddy_Budget",
@@ -150,7 +150,7 @@
           "desc": "默认只在真领到东西或出错时通知，避免「已签过 / Buddy 还在路上」刷屏。"
         }
       ],
-      "desc_html": "<div style=\"padding:8px 0\"><a href=\"https://www.codebuddy.cn/wb-login\" target=\"_blank\" style=\"display:inline-block;padding:10px 18px;border-radius:22px;text-decoration:none;font-weight:600;margin:0 8px 8px 0;background:#2b7fff;color:#fff\">📱 手机登录</a><p style=\"margin:10px 0 0;font-size:13px;line-height:1.7;color:#888\">请先更新并启用最新版 Loon 插件。登录页会建立 10 分钟有效的一次性 PKCE 事务，回调时严格校验 state，verifier 不会写入 URL。若自动回调未命中，可把完整的 CodeBuddy HTTPS 回调地址粘进下面的「<b>登录回调地址</b>」并保存，再点「<b>立即签到一轮</b>」。令牌只保存在 BoxJS，不会由登录页写入 localStorage。</p></div>"
+      "desc_html": "<div style=\"padding:8px 0\"><a href=\"https://www.codebuddy.cn/wb-login\" target=\"_blank\" style=\"display:inline-block;padding:11px 20px;border-radius:22px;text-decoration:none;font-weight:600;margin:0 8px 8px 0;background:#2b7fff;color:#fff\">📱 一键安全登录</a><p style=\"margin:10px 0 0;font-size:13px;line-height:1.7;color:#888\">请先更新并启用最新版 Loon 插件。只需完成手机号验证，插件会自动换取令牌、验证账号、写入账号池并启用续期，全程无需复制任何内容。「登录回调地址」仅用于自动回调失败时的故障恢复。</p></div>"
     }
   ]
 }

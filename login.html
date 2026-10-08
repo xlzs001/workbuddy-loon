@@ -6,130 +6,97 @@
 <meta name="color-scheme" content="dark light">
 <title>WorkBuddy 手机登录</title>
 <style>
-:root{--bg:#0f1115;--card:#181b22;--line:#262b35;--fg:#e8ecf3;--dim:#98a2b3;--acc:#3b82f6;--ok:#22c55e;--warn:#f59e0b;--err:#ef4444}
+:root{--bg:#080b12;--card:#111724;--card2:#151d2d;--line:#253047;--fg:#f4f7fb;--dim:#97a3b6;--acc:#4f7cff;--acc2:#315ddd;--ok:#22c984;--warn:#f4ad3d;--err:#f15f68}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-body{margin:0;padding:16px 14px 60px;background:var(--bg);color:var(--fg);
-     font:15px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif}
-h1{font-size:19px;margin:4px 0 2px}
-h2{font-size:15px;margin:0 0 10px;color:var(--fg)}
-p{margin:6px 0}
-.dim{color:var(--dim);font-size:13px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;margin:12px 0}
-.btn{display:block;width:100%;padding:14px;border:0;border-radius:12px;background:var(--acc);color:#fff;
-     font-size:16px;font-weight:600;margin:8px 0 0;text-align:center;text-decoration:none}
-.btn.sec{background:#232833;color:var(--fg);font-weight:500;font-size:15px}
-.btn:active{opacity:.75}
-textarea,input,select{width:100%;background:#0b0d11;color:var(--fg);border:1px solid var(--line);
-     border-radius:10px;padding:10px;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
-textarea{min-height:96px;resize:vertical}
-code{background:#0b0d11;border:1px solid var(--line);border-radius:6px;padding:1px 5px;font-size:12.5px;word-break:break-all}
-.row{display:flex;gap:8px}.row>*{flex:1}
-.tag{display:inline-block;font-size:12px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);color:var(--dim)}
-.ok{color:var(--ok)}.warn{color:var(--warn)}.err{color:var(--err)}
-.kv{font-size:13px;margin:4px 0;word-break:break-all}
-.kv b{color:var(--dim);font-weight:500}
-details{margin-top:8px}summary{cursor:pointer;color:var(--dim);font-size:13px}
-ol{padding-left:20px;margin:6px 0}li{margin:4px 0;font-size:13.5px}
-hr{border:0;border-top:1px solid var(--line);margin:14px 0}
+body{max-width:560px;margin:0 auto;padding:28px 16px calc(72px + env(safe-area-inset-bottom));background:radial-gradient(circle at 50% -80px,#1c326d 0,#0c1220 34%,var(--bg) 68%);color:var(--fg);font:15px/1.55 -apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif}
+h1{font-size:25px;line-height:1.15;margin:5px 0 0;letter-spacing:-.5px}
+h2{font-size:17px;margin:0 0 14px;color:var(--fg)}
+p{margin:7px 0}.lead{margin:14px 0 20px;color:#bdc7d8;font-size:14px}.dim{color:var(--dim);font-size:13px}
+.hero{display:flex;align-items:center;gap:13px}.brand{width:48px;height:48px;border-radius:15px;display:grid;place-items:center;background:linear-gradient(145deg,#6e91ff,#365fd8);box-shadow:0 12px 35px #234aaf66;font-size:24px;font-weight:800}
+.card{background:linear-gradient(145deg,var(--card2),var(--card));border:1px solid var(--line);border-radius:18px;padding:18px;margin:14px 0;box-shadow:0 12px 35px #0004}.card.primary{border-color:#3e5fa8;box-shadow:0 18px 50px #102b7055}.requirements{padding:15px 18px}
+.btn{display:block;width:100%;min-height:50px;padding:13px 16px;border:0;border-radius:13px;background:linear-gradient(135deg,var(--acc),var(--acc2));color:#fff;font-size:16px;font-weight:700;margin:15px 0 0;text-align:center;text-decoration:none;box-shadow:0 8px 22px #274fb255;cursor:pointer}.btn.sec{background:#202a3c;color:var(--fg);box-shadow:none;font-weight:600;font-size:14px}.btn:active{transform:translateY(1px);opacity:.86}.btn:disabled{opacity:.58;cursor:wait}
+textarea,input,select{width:100%;background:#090d16;color:var(--fg);border:1px solid var(--line);border-radius:11px;padding:11px;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}textarea{min-height:96px;resize:vertical}select{margin-top:6px}code{background:#080c14;border:1px solid var(--line);border-radius:6px;padding:1px 5px;font-size:12px;word-break:break-all}
+.row{display:flex;gap:9px}.row>*{flex:1}.tag{display:inline-block;font-size:11px;padding:2px 9px;border-radius:999px;border:1px solid #2c765b;color:#61d9a6;background:#14372d}.ok{color:var(--ok)}.warn{color:var(--warn)}.err{color:var(--err)}
+.flow{position:relative;margin:4px 0 17px}.flow:before{content:"";position:absolute;left:15px;top:28px;bottom:28px;width:2px;background:#29354b}.flow-item{position:relative;display:flex;gap:12px;align-items:center;padding:8px 0;color:#8f9bb0}.flow-item i{position:relative;z-index:1;display:grid;place-items:center;width:32px;height:32px;flex:0 0 32px;border-radius:50%;background:#20293a;border:1px solid #344159;font-style:normal;font-size:13px;font-weight:700}.flow-item span{display:flex;flex-direction:column}.flow-item b{font-size:14px}.flow-item small{font-size:12px}.flow-item.active{color:var(--fg)}.flow-item.active i{background:var(--acc);border-color:#82a0ff}.flow-item.done{color:#a9e7cc}.flow-item.done i{background:#176545;border-color:var(--ok)}
+.hint,.safe-note{font-size:12.5px;color:var(--dim)}.safe-note{padding:10px 11px;margin-top:12px;border-radius:10px;background:#0c251d;border:1px solid #2b7659;color:#b9f1d9}.check{display:flex;gap:9px;align-items:flex-start;padding:6px 0;color:#bac5d5;font-size:13px}.check b{color:var(--ok)}
+.kv{font-size:13px;margin:4px 0;word-break:break-all}.kv b{color:var(--dim);font-weight:500}details{margin-top:10px}details.compact{padding-top:4px}details.recovery>summary{font-size:14px;color:#c0cada;font-weight:600}summary{cursor:pointer;color:var(--dim);font-size:13px}footer{text-align:center;color:#8793a7;font-size:12px;padding:12px 0 4px}footer p{margin:4px 0}
+@media(max-width:390px){body{padding-left:12px;padding-right:12px}.row{display:block}.row .btn{margin-top:9px}}
 </style>
 </head>
 <body>
 
-<h1>WorkBuddy 手机登录</h1>
-<p class="dim">在这个页面里用手机号登录 CodeBuddy，直接拿到签到要用的令牌，不用再回电脑导出。
-  <br><span id="src"></span></p>
+<header class="hero">
+  <div class="brand">W</div>
+  <div><span class="tag ok">全自动登录</span><h1>连接 WorkBuddy</h1></div>
+</header>
+<p class="lead">只需完成手机号验证，后续获取令牌、校验账号、写入账号池和启用自动续期全部自动完成。</p>
 
-<!-- 回调结果横幅：Loon 换完令牌后带着 ?ok / ?warn / ?err 跳回来，就显示在这里 -->
+<!-- Loon 换完令牌后带着 ?ok / ?warn / ?err 回到这里 -->
 <div id="banner"></div>
 
-<!-- ① 登录 -->
-<div class="card">
-  <h2>① 登录（手机号 + 验证码）</h2>
-  <button class="btn" id="go">用手机号登录 CodeBuddy</button>
-  <p class="dim" id="goHint">请先安装最新版 Loon 插件。登录页会建立一次性安全事务；登录完通常自动跳回本页，若回调未命中可把地址栏完整 URL 粘到第 ② 步。</p>
-  <details>
-    <summary>登录完没有任何提示？看这里</summary>
-    <p class="dim">最可能是 Loon 没拦到这次回调，逐条查：</p>
-    <ol>
-      <li>Loon → 插件 → 把 WorkBuddy 插件<b>更新一次</b>，确认里面有 <code>WorkBuddy手机登录</code> 这一条。</li>
-      <li>Loon 设置里 <b>MITM 开关要打开</b>，且 <code>[MITM]</code> 的 hostname 含 <code>www.codebuddy.cn</code>。</li>
-      <li>自动回调未命中：复制地址栏完整 URL，粘到第 ② 步；仍会使用登录前建立的一次性事务校验。</li>
-      <li>跳到 <code>…/account/?…</code> 之后屏幕上只有一段 <code>{"message":"Your IP address is not allowed"}</code>？<b>没关系</b> —— 地址栏那条 URL 里带着 <code>code=</code>，整段复制到第 ② 步就能换到令牌。</li>
-      <li><code>code</code> 只有约 <b>1 分钟</b>有效期，超时了重新点一次登录。</li>
-    </ol>
-  </details>
-  <details>
-    <summary>高级（一般不用改）</summary>
-    <p class="dim">client_id：<select id="client">
-      <option value="account-console" selected>account-console（公开客户端，推荐）</option>
-      <option value="account">account（备用）</option>
-    </select></p>
-    <p class="dim">PKCE：<b>S256（强制开启，关不掉）</b> —— CodeBuddy 服务端要求，不带会被直接打回。
-      verifier 只保存在当前会话和 Loon 的一次性事务存储中，不会出现在回调 URL；回调时会校验 state，换取完成后立即清除。</p>
-  </details>
-</div>
+<main id="loginCard" class="card primary">
+  <h2>一键完成配置</h2>
+  <div class="flow" id="flow">
+    <div class="flow-item active" id="flowPrepare"><i>1</i><span><b>建立安全连接</b><small>创建一次性 PKCE 登录事务</small></span></div>
+    <div class="flow-item" id="flowAuth"><i>2</i><span><b>手机号验证</b><small>前往 CodeBuddy 完成登录</small></span></div>
+    <div class="flow-item" id="flowSave"><i>3</i><span><b>自动配置完成</b><small>获取并验证令牌，写入 BoxJS</small></span></div>
+  </div>
+  <button class="btn" id="go">开始安全登录</button>
+  <p class="hint" id="goHint">登录完成后会自动返回本页，无需复制地址、令牌或打开 BoxJS。</p>
+  <div class="safe-note">令牌不会出现在网址中；一次性登录事务在使用后立即销毁。</div>
 
-<!-- ② 粘贴回调 -->
-<div class="card">
-  <h2>② 粘贴回调地址</h2>
-  <textarea id="cb" placeholder="https://www.codebuddy.cn/auth/realms/copilot/account/?state=...&code=xxxxxxxx-..."></textarea>
+  <details class="compact">
+    <summary>高级设置</summary>
+    <label class="dim" for="client">登录客户端</label>
+    <select id="client">
+      <option value="account-console" selected>account-console（推荐）</option>
+      <option value="account">account（备用）</option>
+    </select>
+  </details>
+</main>
+
+<section class="card requirements">
+  <h2>使用条件</h2>
+  <div class="check"><b>✓</b><span>已安装最新版 WorkBuddy Loon 插件</span></div>
+  <div class="check"><b>✓</b><span>Loon 的 MITM 已开启并信任证书</span></div>
+  <div class="check"><b>✓</b><span>MITM hostname 包含 <code>www.codebuddy.cn</code></span></div>
+</section>
+
+<details class="card recovery">
+  <summary>登录没有自动返回？打开故障恢复</summary>
+  <p class="dim">正常流程不需要此步骤。仅当登录后停在 CodeBuddy 回调页时，复制地址栏中的完整 HTTPS 地址粘贴到这里。</p>
+  <textarea id="cb" placeholder="https://www.codebuddy.cn/auth/realms/copilot/account/?state=...&code=..."></textarea>
   <div class="row">
-    <button class="btn sec" id="paste">从剪贴板粘贴</button>
-    <button class="btn" id="ex">换取令牌</button>
+    <button class="btn sec" id="paste">粘贴地址</button>
+    <button class="btn" id="ex">继续自动配置</button>
   </div>
   <div id="exOut"></div>
-  <p class="dim"><b>在这一页换不了？</b>普通浏览器里 CodeBuddy 的令牌接口不带跨域许可，浏览器会拦下这次请求（<code>Load failed</code> / <code>Failed to fetch</code>）—— 不是地址的问题。这时改用手机上的 <b>BoxJS</b>：把这条 URL 粘进 WorkBuddy 应用里的「<b>登录回调地址</b>」保存，再点「<b>立即签到一轮（手动运行）</b>」，由脚本在手机本地换令牌并写进账号池（这条路不需要 MITM）。</p>
-</div>
+</details>
 
-<!-- ③ 结果 -->
+<!-- 仅故障恢复流程使用；正常自动流程由 Loon 直接写入 BoxJS -->
 <div class="card" id="outCard" style="display:none">
-  <h2>③ 账号池（粘进 BoxJS「账号池」）</h2>
+  <h2>手动恢复结果</h2>
   <div id="info"></div>
-  <textarea id="pool" readonly style="min-height:150px"></textarea>
+  <textarea id="pool" readonly style="min-height:130px"></textarea>
   <div class="row">
-    <button class="btn sec" id="copyPool">复制</button>
-    <button class="btn sec" id="verify">验证令牌可用性</button>
+    <button class="btn sec" id="copyPool">复制账号数据</button>
+    <button class="btn sec" id="verify">验证令牌</button>
   </div>
   <div id="verifyOut"></div>
-  <p class="dim">BoxJS → 应用 → WorkBuddy 自动签到 → <b>账号池</b> → 粘进去 → 点右下角蓝色按钮保存。</p>
 </div>
 
-<!-- ④ 续期 -->
-<div class="card">
-  <h2>④ 续期（access_token 过期时用）</h2>
-  <div id="sess" class="dim">还没有登录记录。</div>
-  <textarea id="rt" placeholder="粘贴 refresh_token（不填则用本机上次登录记住的那个）"></textarea>
-  <button class="btn sec" id="refresh">用 refresh_token 换新令牌</button>
+<details class="card recovery">
+  <summary>维护工具</summary>
+  <div id="sess" class="dim">当前页面没有登录记录。</div>
+  <textarea id="rt" placeholder="refresh_token"></textarea>
+  <button class="btn sec" id="refresh">手动续期</button>
   <div id="rfOut"></div>
-</div>
+</details>
 
-<!-- ⑤ Loon 自动模式 -->
-<div class="card">
-  <h2>⑤ 全自动模式（可选）</h2>
-  <p class="dim">在 Loon 里装好本仓库插件后，插件会拦下这次登录回调：把令牌<b>直接写进 BoxJS 账号池</b>、顺手验证能不能签到，然后<b>自动把浏览器送回本页</b>。这时你只要：</p>
-  <ol>
-    <li>PKCE 不用管（页面强制开启 S256，verifier 会暂存在 Loon 的一次性登录事务中）</li>
-    <li>点登录 → 输手机号 + 验证码</li>
-    <li>等浏览器跳回本页 → 顶部出现 <b>✅ 登录成功 / ⚠️ 令牌未验证通过 / ❌ 登录没有完成</b> 的横幅（Loon 和 BoxJS 也会各收到一条通知）</li>
-  </ol>
-    <p class="dim"><b>BoxJS 交棒模式</b>：登录完把地址栏那条 URL 整段复制 →
-    手机 <b>BoxJS</b> → WorkBuddy 应用 →「<b>登录回调地址</b>」→ 粘贴 → 保存 →
-    再点「<b>立即签到一轮（手动运行）</b>」。最新版插件会在登录前保存一次性 PKCE 事务，脚本校验 state 后换取令牌、
-    验证签到并写入账号池。换完那个字段与一次性事务都会自动清空。</p>
-</div>
-
-<!-- ⑥ 说明 -->
-<div class="card">
-  <h2>这是怎么运作的</h2>
-  <ol>
-    <li>登录走的是 codebuddy.cn 自己的 Keycloak（realm <code>copilot</code>），用的公开客户端 <code>account-console</code>，不碰任何第三方凭据。</li>
-    <li>令牌换回来之后，本页把它整理成 BoxJS 账号池的格式（含 <code>refresh_token</code>），方便你一键复制。</li>
-    <li>令牌只能由签发它的客户端续期。<code>account-console</code> 是公开客户端，所以这页换出来的令牌 <b>以后能自己续期</b>；电脑版导出的旧令牌（client <code>console</code>）不行，过期只能重登。</li>
-  </ol>
-  <p class="dim">令牌只保存在当前页面内存中，不会写入 localStorage；刷新或关闭页面后自动消失。需要复用时请立即复制到 BoxJS。</p>
-  <hr>
-  <p class="dim">不想用这一页？也可以直接在手机浏览器登录官方页面：<a href="https://www.codebuddy.cn/" target="_blank" rel="noreferrer" style="color:var(--acc)">www.codebuddy.cn</a>（但官方登录的令牌换不到手，还需要配合 Loon 抓包）。</p>
-</div>
+<footer>
+  <span id="src"></span>
+  <p>登录采用 PKCE S256；敏感令牌仅由本机 Loon 写入 BoxJS，不上传到第三方。</p>
+</footer>
 
 <script>
 /* ---------- 常量：来自 realm 的 .well-known/openid-configuration ---------- */
@@ -190,16 +157,32 @@ function fmt(expSec) {
 function say(el, cls, html) { el.innerHTML = '<p class="' + cls + '">' + html + "</p>"; }
 
 /* ---------- ① 登录 ---------- */
+function flow(step) {
+  var ids = ["flowPrepare", "flowAuth", "flowSave"];
+  for (var i = 0; i < ids.length; i++) {
+    var el = $(ids[i]);
+    el.className = "flow-item" + (i < step ? " done" : (i === step ? " active" : ""));
+    el.querySelector("i").textContent = i < step ? "✓" : String(i + 1);
+  }
+}
+function setBusy(on, text) {
+  var b = $("go");
+  b.disabled = !!on;
+  b.textContent = text || (on ? "正在建立安全连接…" : "开始安全登录");
+}
 $("go").onclick = function () {
   var client = $("client").value;
+  setBusy(true, "正在建立安全连接…");
+  flow(0);
+  $("goHint").textContent = "正在创建一次性登录事务，请勿关闭页面。";
   LS.set("client", client);
   TX.set("client", client);
   // account-console 在服务端强制 PKCE(S256)：不带 code_challenge_method 会被直接打回
   //   .../account/?error=invalid_request&error_description=Missing+parameter%3A+code_challenge_method
   // 所以这里没有「关掉」这个选项。
   if (!window.crypto || !window.crypto.subtle) {
-    $("goHint").innerHTML = '<span class="err">这个地址不能用：它需要 https 才能算 PKCE，而 CodeBuddy 服务端强制要求 PKCE。' +
-      '请改用 https 版登录页（本仓库 Pages 上的 login.html，或 Loon 提供的那一页）。</span>';
+    setBusy(false);
+    $("goHint").innerHTML = '<span class="err">当前页面不是安全 HTTPS 环境，无法建立 PKCE 登录。</span>';
     return;
   }
   var verifier = rand(32) + rand(32);
@@ -221,11 +204,16 @@ $("go").onclick = function () {
                "state=" + encodeURIComponent(state),
                "code_challenge=" + ch,
                "code_challenge_method=S256"];
+      flow(1);
+      setBusy(true, "正在打开手机号验证…");
+      $("goHint").textContent = "验证完成后会自动返回并保存账号，请勿复制任何令牌。";
       location.href = AUTH_EP + "?" + q.join("&");
     });
   }).catch(function () {
     TX.clear();
-    $("goHint").innerHTML = '<span class="err">初始化安全登录事务失败。请确认使用最新版 Loon 插件，并重新打开页面。</span>';
+    setBusy(false);
+    flow(0);
+    $("goHint").innerHTML = '<span class="err">无法连接本机 Loon 登录服务。请确认插件已更新、MITM 已开启并信任证书。</span>';
   });
 };
 
@@ -405,26 +393,32 @@ function banner() {
   var el = $("banner"), html = "";
   var name = q.get("name") || "账号";
   var msg = q.get("msg") || "";
-  var again = '<button class="btn sec" onclick="goAgain()">再登录一个账号</button>';
-  var toBox = '<a class="btn" href="https://boxjs.com" target="_blank" rel="noreferrer" style="color:#fff">打开 BoxJS 看看</a>';
+  var again = '<button class="btn sec" onclick="goAgain()">连接另一个账号</button>';
+  var toBox = '<a class="btn sec" href="https://boxjs.com" target="_blank" rel="noreferrer" style="color:#fff">查看 BoxJS</a>';
   if (q.get("ok")) {
-    html = '<div class="card" style="border-color:var(--ok)">' +
-      '<h2 class="ok">✅ 登录成功</h2>' +
-      '<p><b>' + esc(name) + '</b> 的令牌已经写进 BoxJS 的「账号池」，并且签到接口验证通过。</p>' +
-      '<p class="dim">以后令牌快到期时脚本会自己续期，不用再登录。核对位置：BoxJS → 应用 → WorkBuddy 自动签到 → 账号池。</p>' +
+    flow(3);
+    $("loginCard").style.display = "none";
+    html = '<div class="card" style="border-color:var(--ok);text-align:center">' +
+      '<div style="font-size:42px;line-height:1">✓</div>' +
+      '<h2 class="ok" style="font-size:21px;margin-top:10px">全部配置完成</h2>' +
+      '<p><b>' + esc(name) + '</b> 已连接，令牌验证通过并写入 BoxJS 账号池。</p>' +
+      '<p class="dim">自动签到与令牌续期已经启用，之后无需再登录或复制任何内容。</p>' +
       '<div class="row">' + toBox + again + '</div></div>';
   } else if (q.get("warn")) {
+    flow(3);
     html = '<div class="card" style="border-color:var(--warn)">' +
-      '<h2 class="warn">⚠️ 令牌已写入，但签到接口不认</h2>' +
+      '<h2 class="warn">令牌已自动保存，需要检查账号</h2>' +
       '<p><b>' + esc(name) + '</b> 的令牌已经写进账号池，但签到接口回报：</p>' +
       (msg ? '<p class="dim">' + esc(msg) + '</p>' : '') +
       '<p class="dim">先在 BoxJS 里手动跑一轮看看结果；确实不行就把这条从账号池删掉，继续用电脑版导出的令牌。</p>' +
       '<div class="row">' + toBox + again + '</div></div>';
   } else if (q.get("err")) {
+    flow(0);
+    setBusy(false, "重新安全登录");
     html = '<div class="card" style="border-color:var(--err)">' +
-      '<h2 class="err">❌ 登录没有完成</h2>' +
+      '<h2 class="err">登录没有完成</h2>' +
       '<p>' + esc(msg || "换令牌失败") + '</p>' +
-      '<p class="dim">再点一次「用手机号登录」重来即可（code 只有约 1 分钟有效期）。</p>' +
+      '<p class="dim">点击下方按钮重新开始；系统会建立新的安全事务并自动完成后续步骤。</p>' +
       '<div class="row">' + again + '</div></div>';
   }
   if (html) {
@@ -439,7 +433,7 @@ function goAgain() { location.href = location.pathname; }
 (function srcNote() {
   var el = $("src");
   if (!el) return;
-  el.innerHTML = "（敏感令牌只留在当前页面内存中，刷新或关闭后自动清除）";
+  el.textContent = "WorkBuddy 本机安全登录";
 })();
 banner();
 renderSession();
