@@ -50,8 +50,10 @@ ok("Content-Type 是 text/html（浏览器才会渲染而不是显示源码）",
   !!resp && /text\/html/.test(resp.headers["Content-Type"] || ""), resp && resp.headers);
 ok("禁止缓存（改完页面立刻生效，不用等 CDN）",
   !!resp && /no-store/.test(resp.headers["Cache-Control"] || ""), resp && resp.headers);
-ok("body 与 login.html 字节级一致（没被转义/截断）", !!resp && resp.body === HTML,
-  { got: resp && resp.body && resp.body.length, want: HTML.length });
+// Git 仓库中的 login.html 使用 LF；Windows 工作区检出时可能自动转成 CRLF。
+const publishedHTML = HTML.replace(/\r\n/g, "\n");
+ok("body 与仓库发布的 login.html 内容一致（没被转义/截断）", !!resp && resp.body === publishedHTML,
+  { got: resp && resp.body && resp.body.length, want: publishedHTML.length });
 ok("body 是完整 HTML 而不是 JSON 字符串", !!resp && /^<!DOCTYPE html>/.test(resp.body), resp && resp.body.slice(0, 30));
 ok("只 $done 一次", doneArgs.length === 1, doneArgs.length);
 ok("日志里写了 HTML 字节数", logs.some((l) => /输出登录页：HTML \d+ 字节/.test(l)), logs);
@@ -73,6 +75,22 @@ ok("PKCE verifier 不进入回调 URL，并通过一次性登录事务保存",
   HTML.indexOf('var state = rand(32)') > 0 && HTML.indexOf('TX.set("verifier", verifier)') > 0 &&
   HTML.indexOf('state = rand(16) + "~" + verifier') < 0);
 ok("故障恢复入口默认折叠且不干扰一键登录", HTML.indexOf("登录没有自动返回？打开故障恢复") > 0);
+const callbackCheck = HTML.match(/function parseCode\(text\) \{[\s\S]*?\n\}/);
+const parseSandbox = { URL, decodeURIComponent };
+if (callbackCheck) vm.runInNewContext('function safeDecode(s) { return decodeURIComponent(s); }\n' + callbackCheck[0], parseSandbox);
+const callbackBase = "https://www.codebuddy.cn/auth/realms/copilot/account";
+ok("回调手动校验兼容 account 和 account/ 且拒绝相似路径",
+  !!parseSandbox.parseCode &&
+  parseSandbox.parseCode(callbackBase + "?state=x&code=y").validUrl &&
+  parseSandbox.parseCode(callbackBase + "/?state=x&code=y").validUrl &&
+  !parseSandbox.parseCode(callbackBase + "-evil?state=x&code=y").validUrl);
+const plugin = fs.readFileSync(path.join(BASE, "WorkBuddy.plugin"), "utf8");
+ok("插件规则和脚本校验兼容无尾斜杠回调",
+  code.includes('account\\/?(?:[?#]|$)') && plugin.includes('account\\/?(?:\\?.*)?'));
+ok("手动恢复由 Loon 本地处理并写入账号池，而非仅显示敏感令牌",
+  HTML.includes('fetch("https://www.codebuddy.cn/wb-login/recover"') &&
+  code.includes('if (argument() === "login-recover") return serveLoginRecovery();') &&
+  plugin.includes('argument=login-recover'));
 ok("refresh token 不写入 localStorage",
   HTML.indexOf('localStorage.setItem("wb_" + k, v)') < 0 && HTML.indexOf("var MEM = {}") > 0);
 ok("仍指向正确的 realm / 公开客户端",

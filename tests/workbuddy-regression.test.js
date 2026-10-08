@@ -142,5 +142,49 @@ const session = execute({
 ok("合法登录事务写入存储", JSON.parse(session.data.WorkBuddy_LoginTransaction).state === state, session.data);
 ok("登录事务接口返回 204", session.done[0] && session.done[0].response.status === 204, session.done);
 
+console.log("\n=== 无尾斜杠回调与登录页恢复入口 ===");
+const payload = Buffer.from(JSON.stringify({ sub: "uid-recovered", nickname: "恢复账号", exp: Math.floor(Date.now() / 1000) + 86400 })).toString("base64url");
+const accessToken = "eyJhbGciOiJub25lIn0." + payload + ".sig";
+function recoveryRoute(method, url) {
+  if (/openid-connect\/token$/.test(url)) return { status: 200, data: { access_token: accessToken, refresh_token: "rt-recovered" } };
+  if (/checkin-activity-status$/.test(url)) return { status: 200, data: { code: 0 } };
+  throw new Error("unexpected network request: " + url);
+}
+function transaction() { return { WorkBuddy_LoginTransaction: JSON.stringify({ state, verifier, client: "account-console", createdAt: Date.now() }) }; }
+const noSlash = execute({
+  argument: "login", store: transaction(),
+  request: { url: "https://www.codebuddy.cn/auth/realms/copilot/account?state=" + state + "&code=once", method: "GET", headers: {} },
+  route: recoveryRoute
+});
+ok("无尾斜杠自动回调可换令牌并写入账号池", noSlash.calls.length === 2 &&
+  JSON.parse(noSlash.data.WorkBuddy_Accounts || "[]")[0].uid === "uid-recovered", noSlash.data);
+ok("自动回调仍 302 返回登录页", noSlash.done[0] && noSlash.done[0].response.status === 302, noSlash.done);
+const recovered = execute({
+  argument: "login-recover", store: transaction(),
+  request: { url: "https://www.codebuddy.cn/wb-login/recover", method: "POST", headers: {},
+    body: JSON.stringify({ callback: "https://www.codebuddy.cn/auth/realms/copilot/account?state=" + state + "&code=once" }) },
+  route: recoveryRoute
+});
+ok("恢复入口直接写入 BoxJS 账号池", recovered.calls.length === 2 &&
+  JSON.parse(recovered.data.WorkBuddy_Accounts || "[]")[0].uid === "uid-recovered", recovered.data);
+ok("恢复入口返回 JSON 而非重定向", recovered.done[0] && recovered.done[0].response.status === 200 &&
+  JSON.parse(recovered.done[0].response.body).kind === "ok" && !recovered.done[0].response.headers.Location, recovered.done);
+const rejected = execute({
+  argument: "login-recover", store: transaction(),
+  request: { url: "https://www.codebuddy.cn/wb-login/recover", method: "POST", headers: {},
+    body: JSON.stringify({ callback: "https://www.codebuddy.cn/auth/realms/copilot/account-evil?state=" + state + "&code=once" }) },
+  route() { throw new Error("相似路径不应换令牌"); }
+});
+ok("相似但非法的路径仍被拒绝", rejected.calls.length === 0 &&
+  JSON.parse(rejected.done[0].response.body).kind === "err", rejected.done);
+const wrongState = execute({
+  argument: "login-recover", store: transaction(),
+  request: { url: "https://www.codebuddy.cn/wb-login/recover", method: "POST", headers: {},
+    body: JSON.stringify({ callback: "https://www.codebuddy.cn/auth/realms/copilot/account?state=wrong&code=once" }) },
+  route() { throw new Error("不匹配 state 不应换令牌"); }
+});
+ok("恢复入口仍校验一次性 state", wrongState.calls.length === 0 &&
+  JSON.parse(wrongState.done[0].response.body).kind === "err", wrongState.done);
+
 console.log("\n" + (fails ? "✗ " + fails + " 个断言失败" : "✓ 全部断言通过"));
 process.exit(fails ? 1 : 0);
