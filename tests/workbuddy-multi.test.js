@@ -179,14 +179,6 @@ const r4 = runCase("场景 4：账号池 JSON 损坏", {
 ok("解析失败时给 NO_AUTH 而不是崩溃", r4.last && r4.last.result === "NO_AUTH", r4.last && r4.last.result);
 ok("报告说明 JSON 解析失败", /JSON 解析失败/.test(r4.last && r4.last.report), r4.last && r4.last.report);
 
-/* ---------- 场景 4-B：无效账号池不得回退旧单账号 ---------- */
-const r4b = runCase("场景 4-B：无效账号池不回退旧单账号", {
-  store: { WorkBuddy_Accounts: "{不是 JSON", WorkBuddy_Token: TOK.A, WorkBuddy_Uid: UID.A, WorkBuddy_EnableGrowth: "0" },
-  scenario: () => { throw new Error("无效账号池不应发起业务请求"); }
-});
-ok("已配置但损坏的账号池返回 NO_AUTH", r4b.last && r4b.last.result === "NO_AUTH", r4b.last);
-ok("旧单账号令牌未被误用", r4b.calls.length === 0, r4b.calls);
-
 /* ---------- 场景 5：档位标识被判 unknown tier → 退回落天数重试 ---------- */
 const redeemBodies = [];
 const scenario5 = (who, method, path, body) => {

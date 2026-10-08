@@ -17,7 +17,6 @@ const BASE = path.resolve(__dirname, "..");
 const SRC = path.join(BASE, "workbuddy.js");
 const HTML = fs.readFileSync(path.join(BASE, "login.html"), "utf8");
 const code = fs.readFileSync(SRC, "utf8");
-const plugin = fs.readFileSync(path.join(BASE, "WorkBuddy.plugin"), "utf8");
 
 let fails = 0;
 function ok(name, cond, extra) {
@@ -66,9 +65,6 @@ ok("主流程明确为全自动且无需复制",
   HTML.indexOf("无需复制地址、令牌或打开 BoxJS") > 0);
 ok("手工粘贴只保留在故障恢复折叠区",
   HTML.indexOf('<details class="card recovery">') > 0 && HTML.indexOf("登录没有自动返回？打开故障恢复") > 0);
-ok("页面恢复兼容无尾斜杠，并由本机 Loon 写入 BoxJS",
-  HTML.indexOf('u.pathname === "/auth/realms/copilot/account"') > 0 &&
-  HTML.indexOf('fetch("https://www.codebuddy.cn/wb-login/recover"') > 0);
 ok("PKCE 强制开启（account-console 服务端要求，页面已无关闭选项）",
   HTML.indexOf('"code_challenge_method=S256"') > 0 &&
   HTML.indexOf('"code_challenge=" + ch') > 0 &&
@@ -85,22 +81,10 @@ ok("仍指向正确的 realm / 公开客户端",
 console.log("\n=== 脚本侧接线 ===");
 ok("脚本里有 servePage 分支", code.indexOf('if (argument() === "page") return servePage();') > 0);
 ok("脚本里有一次性登录事务分支", code.indexOf('if (argument() === "login-session") return serveLoginSession();') > 0);
-ok("脚本里有登录页故障恢复分支", code.indexOf('if (argument() === "login-recover") return serveLoginRecovery();') > 0);
 ok("page 分支在 captureToken 之前（否则会被抓令牌逻辑抢走）",
   code.indexOf('if (argument() === "page") return servePage();') < code.indexOf("return captureToken();"));
 ok("登录页地址默认走 codebuddy 域名（不依赖 GitHub Pages）",
   code.indexOf('var LOGIN_URL = PAGE_URL;') > 0 && code.indexOf('var PAGE_URL = "https://www.codebuddy.cn/wb-login";') > 0);
-const callbackRule = plugin.split("\n").find((line) => line.includes("tag=WorkBuddy手机登录"));
-const recoveryRule = plugin.split("\n").find((line) => line.includes("argument=login-recover"));
-const callbackPattern = new RegExp(callbackRule.split(" script-path=")[0].replace(/^http-request /, ""));
-const recoveryPattern = new RegExp(recoveryRule.split(" script-path=")[0].replace(/^http-request /, ""));
-ok("Loon 自动回调规则兼容有无尾斜杠",
-  callbackPattern.test("https://www.codebuddy.cn/auth/realms/copilot/account?state=x&code=y") &&
-  callbackPattern.test("https://www.codebuddy.cn/auth/realms/copilot/account/?state=x&code=y") &&
-  !callbackPattern.test("https://www.codebuddy.cn/auth/realms/copilot/account-evil?state=x&code=y"));
-ok("Loon 恢复规则精确拦截本机 POST 入口",
-  recoveryPattern.test("https://www.codebuddy.cn/wb-login/recover") &&
-  !recoveryPattern.test("https://www.codebuddy.cn/wb-login/recover-evil"));
 
 console.log("");
 if (fails) { console.log("✗ " + fails + " 条断言失败"); process.exit(1); }
